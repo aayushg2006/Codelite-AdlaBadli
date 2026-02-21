@@ -21,38 +21,55 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
   const listedItems = ['Chair', 'Table', 'Lamp']
   const fallbackDescription = 'Solid build with a smooth finish. Minimal wear, clean upholstery, and ready for pickup.'
 
-  // 1. INITIALIZE CHAT & FETCH MESSAGES
+// 1. INITIALIZE CHAT & FETCH MESSAGES
   useEffect(() => {
-    if (!session?.user) return
+    if (!session?.user) {
+      console.warn("ChatRoom: No session found!");
+      return;
+    }
 
     const initializeChat = async () => {
-      // For hackathon purposes, we use a dummy seller ID if the mock data doesn't have one
-      const sellerId = chatContextItem.seller_id || "00000000-0000-0000-0000-000000000000"
+      // HACKATHON FIX: Use a hardcoded, valid UUID for testing so the DB doesn't reject it
+      const safeListingId = "00000000-0000-0000-0000-000000000001";
+      const sellerId = chatContextItem.seller_id || session.user.id;
       
-      // A. Look for an existing chat between this buyer and seller for this item
-      let { data: chat } = await supabase
+      console.log("Looking up chat for listing:", safeListingId);
+
+      // A. Look for an existing chat
+      let { data: chat, error: fetchError } = await supabase
         .from('chats')
         .select('*')
-        .eq('listing_id', chatContextItem.id)
+        .eq('listing_id', safeListingId)
         .eq('buyer_id', session.user.id)
         .single()
 
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error("Error fetching chat:", fetchError);
+      }
+
       // B. If it doesn't exist, create it
       if (!chat) {
-        const { data: newChat, error } = await supabase
+        console.log("No chat found. Creating a new one...");
+        const { data: newChat, error: insertError } = await supabase
           .from('chats')
           .insert({
-            listing_id: chatContextItem.id,
+            listing_id: safeListingId,
             buyer_id: session.user.id,
             seller_id: sellerId
           })
           .select()
           .single()
         
-        if (!error) chat = newChat
+        if (insertError) {
+          console.error("CRITICAL: Failed to create chat in DB:", insertError);
+          alert("Database Error: Could not create chat room. Check console.");
+        } else {
+          chat = newChat;
+        }
       }
 
       if (chat) {
+        console.log("Chat successfully established! Chat ID:", chat.id);
         setActiveChatId(chat.id)
         
         // C. Fetch historical messages
@@ -63,7 +80,6 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
           .order('created_at', { ascending: true })
           
         if (history) {
-          // Map DB rows to our UI format
           const formattedHistory = history.map(msg => ({
             id: msg.id,
             sender: msg.sender_id === session.user.id ? 'me' : 'them',
@@ -129,12 +145,16 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
     return () => document.removeEventListener('keydown', handleEscape)
   }, [])
 
-  // 3. SEND MESSAGE TO DATABASE
+// 3. SEND MESSAGE TO DATABASE
   const sendMessage = async () => {
     const text = draft.trim()
-    if (!text || !activeChatId || !session?.user) return
+    
+    // Debugging guards:
+    if (!text) return; // Just do nothing if empty
+    if (!session?.user) return alert("You must be logged in to send a message!");
+    if (!activeChatId) return alert("Still connecting to chat room... If this persists, check the console for DB errors.");
 
-    // Optimistic UI update (makes the app feel instantly fast)
+    // Optimistic UI update
     const tempId = `temp-${Date.now()}`
     const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date())
     
@@ -152,13 +172,8 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
 
     if (error) {
       console.error("Message send failed:", error)
-      // If it fails, you could remove the optimistic message here
+      alert(`Message failed to send: ${error.message}`);
     }
-  }
-
-  const sendSwapRequest = () => {
-    setIsSwapModalOpen(false)
-    window.alert('Swap Request Sent (Will wire up to N8N soon!)')
   }
 
   return (
