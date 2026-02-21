@@ -1,24 +1,23 @@
 import { Globe2, Leaf, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
-import { supabase } from '../lib/supabase' // Import Supabase
+import { supabase } from '../lib/supabase'
 
 function Auth() {
   const [authMode, setAuthMode] = useState('signin')
   const [isLoading, setIsLoading] = useState(false)
   
   const [credentials, setCredentials] = useState({
-    email: 'riya.local@geoswap.app',
+    email: 'geoswap@example.com',
     password: 'securepass123',
   })
   
   const [signupData, setSignupData] = useState({
     username: '',
-    password: '',
-    mobileNumber: '',
     email: '',
+    mobileNumber: '',
+    password: '',
   })
 
-  // 1. Standard Email Sign In
   const handleSubmit = async (event) => {
     event.preventDefault()
     setIsLoading(true)
@@ -30,7 +29,6 @@ function Auth() {
     setIsLoading(false)
   }
 
-  // 2. Standard Email Sign Up
   const handleSignupSubmit = async (event) => {
     event.preventDefault()
     setIsLoading(true)
@@ -48,49 +46,22 @@ function Auth() {
     if (error) {
       alert(`Signup failed: ${error.message}`)
     } else {
-      alert("Success! Check your email to verify your account, or log in directly if email verification is disabled.")
+      alert("Success! Check your email or log in directly.")
       setAuthMode('signin')
     }
     setIsLoading(false)
   }
 
-  // 3. Google OAuth Login
   const handleGoogleLogin = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: window.location.origin
-      }
+      options: { redirectTo: window.location.origin }
     })
     if (error) alert(`Google login failed: ${error.message}`)
   }
 
-  const handleSignupSubmit = (e) => {
-    e.preventDefault()
-    setStage('verify_otp')
-  }
-
-  const handleVerifyOtp = (e) => {
-    e.preventDefault()
-    if (otpCode.trim().length === 6) {
-      onAuthenticate()
-    }
-  }
-
-  const inputBase =
-    'w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400'
-  const labelBlock =
-    'group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm'
-  const underline =
-    'block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100'
-  const btnPrimary =
-    'w-full rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95'
-  const btnSecondary =
-    'w-full rounded-xl border border-[var(--earth-olive)]/20 py-3 text-sm font-medium text-[var(--deep-olive)] transition duration-150 hover:bg-[#eff5ed] active:scale-95'
-
   return (
     <section className="h-full overflow-y-auto bg-[#f4f7f4] px-4 pb-6 pt-4">
-      {/* Header UI (Unchanged) */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--deep-olive)] to-[var(--earth-olive)] px-5 pb-6 pt-6 text-white shadow-sm">
         <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
         <div className="pointer-events-none absolute -left-10 bottom-2 h-32 w-32 rounded-full bg-[#a5b99d]/25 blur-3xl" />
@@ -98,7 +69,7 @@ function Auth() {
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-white/25 bg-white/12 backdrop-blur-sm">
             <Globe2 size={26} />
           </div>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight">GeoSwap</h1>
+          <h1 className="mt-4 text-3xl font-semibold tracking-tight">AdlaBadli</h1>
           <p className="mt-1 text-sm text-white/85">Swap Smart. Live Local.</p>
         </div>
       </div>
@@ -130,17 +101,13 @@ function Auth() {
           </form>
         ) : (
           <form onSubmit={handleSignupSubmit} className="space-y-3.5">
-             <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
               <p className="text-[10px] uppercase tracking-wider text-gray-500">Username</p>
               <input type="text" value={signupData.username} onChange={(e) => setSignupData(c => ({...c, username: e.target.value}))} className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400" required />
             </label>
             <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
               <p className="text-[10px] uppercase tracking-wider text-gray-500">Email ID</p>
               <input type="email" value={signupData.email} onChange={(e) => setSignupData(c => ({...c, email: e.target.value}))} className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400" required />
-            </label>
-            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500">Mobile Number</p>
-              <input type="tel" value={signupData.mobileNumber} onChange={(e) => setSignupData(c => ({...c, mobileNumber: e.target.value}))} className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400" required />
             </label>
             <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
               <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
@@ -152,13 +119,6 @@ function Auth() {
           </form>
         )}
 
-        {/* Google Login Button */}
-        <div className="mt-6 flex items-center gap-3">
-          <div className="h-px flex-1 bg-gray-200" />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Or continue with</span>
-          <div className="h-px flex-1 bg-gray-200" />
-        </div>
-
         <button type="button" onClick={handleGoogleLogin} className="mt-5 flex w-full items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white py-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50">
           <svg className="h-5 w-5" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -168,7 +128,6 @@ function Auth() {
           </svg>
           Google
         </button>
-
       </div>
     </section>
   )

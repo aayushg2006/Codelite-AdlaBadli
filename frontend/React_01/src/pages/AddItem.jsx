@@ -1,200 +1,136 @@
-import { Camera, Check, Loader2, Sparkles, Upload, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import CurvedHeader from '../components/layout/CurvedHeader'
-import { supabase, uploadImageToBucket } from '../lib/supabase'
+import { Globe2, Leaf, ShieldCheck } from 'lucide-react'
+import { useState } from 'react'
+import { supabase } from '../lib/supabase'
 
-/** Convert a Base64 data URL into a File for Supabase Storage. */
-function dataURLtoFile(dataurl, filename) {
-  const arr = dataurl.split(',')
-  const mime = arr[0].match(/:(.*?);/)[1]
-  const bstr = atob(arr[1])
-  let n = bstr.length
-  const u8arr = new Uint8Array(n)
-  while (n--) u8arr[n] = bstr.charCodeAt(n)
-  return new File([u8arr], filename, { type: mime })
-}
+function Auth() {
+  const [authMode, setAuthMode] = useState('signin')
+  const [isLoading, setIsLoading] = useState(false)
+  
+  const [credentials, setCredentials] = useState({
+    email: 'geoswap@example.com',
+    password: 'securepass123',
+  })
+  
+  const [signupData, setSignupData] = useState({
+    username: '',
+    email: '',
+    mobileNumber: '',
+    password: '',
+  })
 
-const AI_MOCK_RESPONSE = {
-  title: 'Vintage Chair',
-  category: 'Furniture',
-  price: '1200',
-  weight: '8',
-  description: 'Solid wood, slight wear.',
-}
-
-function AddItem() {
-  const [title, setTitle] = useState('')
-  const [category, setCategory] = useState('')
-  const [price, setPrice] = useState('')
-  const [estimatedWeight, setEstimatedWeight] = useState('')
-  const [description, setDescription] = useState('Excellent condition, recently cleaned and ready for pickup.')
-  const [scanState, setScanState] = useState('idle')
-  const [showToast, setShowToast] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState(null)
-  const [isHeaderCompact, setIsHeaderCompact] = useState(false)
-  const [cameraError, setCameraError] = useState(null)
-
-  const videoRef = useRef(null)
-  const canvasRef = useRef(null)
-  const streamRef = useRef(null)
-  const toastTimerRef = useRef(null)
-
-  useEffect(
-    () => () => {
-      if (scanTimerRef.current) {
-        clearTimeout(scanTimerRef.current)
-      }
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current)
-      }
-    },
-    []
-  )
-
-  const startScan = () => {
-    if (scanState === 'scanning') {
-      return
-    }
-
-    setScanState('scanning')
-    setCategory('')
-    setPrice('')
-    setEstimatedWeight('')
-
-    if (scanTimerRef.current) {
-      clearTimeout(scanTimerRef.current)
-    }
-
-    scanTimerRef.current = setTimeout(() => {
-      setScanState('done')
-      setCategory('Home Decor')
-      setPrice('42')
-      setEstimatedWeight('2.4')
-      if (!title) {
-        setTitle('Handwoven Storage Basket')
-      }
-    }, 2000)
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setIsLoading(true)
+    const { error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password,
+    })
+    if (error) alert(`Login failed: ${error.message}`)
+    setIsLoading(false)
   }
 
-  const listItem = () => {
-    if (!title || !category || !price || !estimatedWeight) {
-      return
+  const handleSignupSubmit = async (event) => {
+    event.preventDefault()
+    setIsLoading(true)
+    const { error } = await supabase.auth.signUp({
+      email: signupData.email,
+      password: signupData.password,
+      options: {
+        data: {
+          username: signupData.username,
+          phone: signupData.mobileNumber,
+        }
+      }
+    })
+    
+    if (error) {
+      alert(`Signup failed: ${error.message}`)
+    } else {
+      alert("Success! Check your email or log in directly.")
+      setAuthMode('signin')
     }
-
-      setShowToast(true)
-      resetForm()
-      setTimeout(() => setShowToast(false), 3000)
-    } catch (err) {
-      setUploadError(err.message)
-    } finally {
-      setUploading(false)
-    }
+    setIsLoading(false)
   }
 
-  const resetForm = () => {
-    setTitle(''); setCategory(''); setPrice(''); setWeight(''); setDescription('')
-    setCapturedImage(null); setUploadError(null)
-    startCamera()
+  const handleGoogleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin }
+    })
+    if (error) alert(`Google login failed: ${error.message}`)
   }
 
   return (
-    <section className="relative flex h-full flex-col">
-      <CurvedHeader
-        title="List an Item"
-        compact={isHeaderCompact}
-      />
-
-      <div onScroll={handlePageScroll} className="flex-1 overflow-y-auto px-4 pb-5 pt-4">
-        <div className="rounded-2xl border border-[#dce7d8] bg-white p-4 shadow-sm">
-          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-          
-          {!capturedImage ? (
-            <div className="space-y-3">
-              <div className="relative overflow-hidden rounded-2xl bg-black aspect-[4/3] flex items-center justify-center">
-                {cameraError ? (
-                  <div className="text-white text-xs px-6 text-center">Camera blocked. Use "Upload from Gallery" below.</div>
-                ) : (
-                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                )}
-                <canvas ref={canvasRef} className="hidden" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={capturePhoto} disabled={!!cameraError} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-bold text-white shadow-sm disabled:opacity-50">
-                  <Camera size={18} /> Capture
-                </button>
-                <button type="button" onClick={() => fileInputRef.current.click()} className="flex items-center justify-center gap-2 rounded-xl bg-gray-100 py-3 text-sm font-bold text-gray-700 border border-gray-200">
-                  <Upload size={18} /> Gallery
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="relative rounded-2xl overflow-hidden aspect-[4/3]">
-                <img src={capturedImage} className="w-full h-full object-cover" alt="Preview" />
-                <button onClick={() => setCapturedImage(null)} className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full"><X size={16}/></button>
-              </div>
-              <button type="button" onClick={analyzeWithAI} disabled={analyzing} className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-sm disabled:opacity-70">
-                {analyzing ? <Loader2 className="animate-spin" size={18}/> : <><Sparkles size={18}/> Analyze with AI</>}
-              </button>
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={handleListingSubmit} className="mt-4 space-y-4 rounded-2xl border border-[#dce7d8] bg-white p-5 shadow-sm">
-          <div className="space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Item Details</span>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="w-full p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#dce7d8] transition-all outline-none" required />
-            <input value={category} onChange={e => setCategory(e.target.value)} placeholder="Category" className="w-full p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" required />
-            <div className="flex gap-2">
-              <input value={price} onChange={e => setPrice(e.target.value)} placeholder="Price (₹)" className="flex-1 p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" required />
-              <input value={weight} onChange={e => setWeight(e.target.value)} placeholder="Weight (kg)" className="flex-1 p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" />
-            </div>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" rows={3} className="w-full p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" />
+    <section className="h-full overflow-y-auto bg-[#f4f7f4] px-4 pb-6 pt-4">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--deep-olive)] to-[var(--earth-olive)] px-5 pb-6 pt-6 text-white shadow-sm">
+        <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+        <div className="pointer-events-none absolute -left-10 bottom-2 h-32 w-32 rounded-full bg-[#a5b99d]/25 blur-3xl" />
+        <div className="relative text-center">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-white/25 bg-white/12 backdrop-blur-sm">
+            <Globe2 size={26} />
           </div>
-
-          <label className="block">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Estimated Weight (kg)</p>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={estimatedWeight}
-              onChange={(event) => setEstimatedWeight(event.target.value)}
-              className={`mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition ${
-                scanState === 'done'
-                  ? 'border-green-200 bg-green-50 text-green-800 focus:border-green-300'
-                  : 'border-gray-200 text-gray-700 focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]'
-              }`}
-              placeholder="2.4"
-            />
-          </label>
-
-          <label className="block">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Description</p>
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={3}
-              className="mt-1.5 w-full resize-none rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]"
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={listItem}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95 disabled:cursor-not-allowed disabled:bg-[#a7bca1]"
-            disabled={!title || !category || !price || !estimatedWeight}
-          >
-            <Sparkles size={15} />
-            List within 5km
-          </button>
-        </form>
+          <h1 className="mt-4 text-3xl font-semibold tracking-tight">AdlaBadli</h1>
+          <p className="mt-1 text-sm text-white/85">Swap Smart. Live Local.</p>
+        </div>
       </div>
 
-      {showToast && <div className="fixed top-10 left-1/2 -translate-x-1/2 bg-[var(--earth-olive)] text-white px-6 py-3 rounded-full shadow-2xl z-50 animate-bounce flex items-center gap-2"><Check size={18}/> Listing Live!</div>}
+      <div className="mt-4 rounded-3xl border border-[#dce7d8] bg-white px-5 pb-6 pt-5 shadow-sm">
+        <div className="mb-5 flex items-center justify-center gap-4 text-xs text-gray-500">
+          <span className="flex items-center gap-1.5"><Leaf size={14} className="text-[var(--deep-olive)]" /> Low Waste</span>
+          <span className="flex items-center gap-1.5"><ShieldCheck size={14} className="text-[var(--deep-olive)]" /> Verified Users</span>
+        </div>
+
+        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-[#f2f4f1] p-1">
+          <button type="button" onClick={() => setAuthMode('signin')} className={`rounded-lg py-2.5 text-sm font-semibold transition ${authMode === 'signin' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Sign In</button>
+          <button type="button" onClick={() => setAuthMode('signup')} className={`rounded-lg py-2.5 text-sm font-semibold transition ${authMode === 'signup' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Sign Up</button>
+        </div>
+
+        {authMode === 'signin' ? (
+          <form onSubmit={handleSubmit} className="space-y-3.5">
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Email</p>
+              <input type="email" value={credentials.email} onChange={(e) => setCredentials(c => ({...c, email: e.target.value}))} className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400" required />
+            </label>
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
+              <input type="password" value={credentials.password} onChange={(e) => setCredentials(c => ({...c, password: e.target.value}))} className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400" required />
+            </label>
+            <button type="submit" disabled={isLoading} className="w-full rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--deep-olive)] disabled:opacity-50">
+              {isLoading ? 'Signing In...' : 'Sign In'}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleSignupSubmit} className="space-y-3.5">
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Username</p>
+              <input type="text" value={signupData.username} onChange={(e) => setSignupData(c => ({...c, username: e.target.value}))} className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400" required />
+            </label>
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Email ID</p>
+              <input type="email" value={signupData.email} onChange={(e) => setSignupData(c => ({...c, email: e.target.value}))} className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400" required />
+            </label>
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
+              <input type="password" value={signupData.password} onChange={(e) => setSignupData(c => ({...c, password: e.target.value}))} className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400" required />
+            </label>
+            <button type="submit" disabled={isLoading} className="w-full rounded-xl bg-[var(--deep-olive)] py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--earth-olive)] disabled:opacity-50">
+              {isLoading ? 'Creating Account...' : 'Sign Up'}
+            </button>
+          </form>
+        )}
+
+        <button type="button" onClick={handleGoogleLogin} className="mt-5 flex w-full items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white py-3 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50">
+          <svg className="h-5 w-5" viewBox="0 0 24 24">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+          </svg>
+          Google
+        </button>
+      </div>
     </section>
   )
 }
 
-export default AddItem
+export default Auth
