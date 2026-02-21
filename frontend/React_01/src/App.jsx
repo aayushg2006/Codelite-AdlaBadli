@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import BottomNav from './components/layout/BottomNav'
 import AddItem from './pages/AddItem'
 import Auth from './pages/Auth'
@@ -6,6 +6,8 @@ import ChatRoom from './pages/ChatRoom'
 import Entry from './pages/Entry'
 import Home from './pages/Home'
 import Profile from './pages/Profile'
+import { supabase } from './lib/supabase' // Import Supabase!
+
 import {
   chatContextItem,
   chatPartner,
@@ -18,19 +20,39 @@ import {
 function App() {
   const [activeTab, setActiveTab] = useState('home')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [session, setSession] = useState(null) // Track the actual user data
   const [authStage, setAuthStage] = useState('entry')
   const [selectedChatItem, setSelectedChatItem] = useState(chatContextItem)
   const [wishlistIds, setWishlistIds] = useState(() => [...profile.wishlistIds])
   const [screenKey, setScreenKey] = useState(0)
 
+  // NEW: Listen for Authentication Changes (Email or Google)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session) {
+        setIsAuthenticated(true)
+        setActiveTab('home')
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session) {
+        setIsAuthenticated(true)
+        setActiveTab('home')
+        setScreenKey((current) => current + 1)
+      } else {
+        setIsAuthenticated(false)
+        setAuthStage('entry')
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
   const handleTabChange = (tab) => {
     setActiveTab(tab)
-    setScreenKey((current) => current + 1)
-  }
-
-  const handleAuthenticated = () => {
-    setIsAuthenticated(true)
-    setActiveTab('home')
     setScreenKey((current) => current + 1)
   }
 
@@ -51,6 +73,7 @@ function App() {
     )
   }
 
+  // Pass the session to components that need it (like Profile or AddItem)
   let tabContent = (
     <Home
       listings={listings}
@@ -61,10 +84,11 @@ function App() {
   )
 
   if (!isAuthenticated) {
+    // Notice we don't need onAuthenticate anymore, the useEffect handles it!
     tabContent =
-      authStage === 'entry' ? <Entry onGetStarted={openLogin} /> : <Auth onAuthenticate={handleAuthenticated} />
+      authStage === 'entry' ? <Entry onGetStarted={openLogin} /> : <Auth />
   } else if (activeTab === 'add') {
-    tabContent = <AddItem />
+    tabContent = <AddItem session={session} />
   } else if (activeTab === 'chat') {
     tabContent = (
       <ChatRoom
@@ -72,12 +96,13 @@ function App() {
         chatPartner={chatPartner}
         chatContextItem={selectedChatItem}
         onBack={() => handleTabChange('home')}
+        session={session}
       />
     )
   } else if (activeTab === 'profile') {
     tabContent = (
       <Profile
-        profile={profile}
+        profile={profile} // Later we will replace this with real user data
         impactStats={impactStats}
         listings={listings}
         wishlistIds={wishlistIds}
