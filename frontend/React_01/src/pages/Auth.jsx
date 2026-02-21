@@ -2,15 +2,49 @@ import { Globe2, Leaf, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 
 function Auth({ onAuthenticate }) {
-  const [credentials, setCredentials] = useState({
-    email: 'riya.local@geoswap.app',
-    password: 'securepass123',
+  const [stage, setStage] = useState('login') // 'login' | 'signup' | 'verify_otp'
+
+  const [loginCredentials, setLoginCredentials] = useState({
+    email: '',
+    password: '',
   })
 
-  const handleSubmit = (event) => {
-    event.preventDefault()
+  const [signupData, setSignupData] = useState({
+    fullName: '',
+    phoneNumber: '',
+    email: '',
+    password: '',
+  })
+
+  const [otpCode, setOtpCode] = useState('')
+
+  const handleLoginSubmit = (e) => {
+    e.preventDefault()
     onAuthenticate()
   }
+
+  const handleSignupSubmit = (e) => {
+    e.preventDefault()
+    setStage('verify_otp')
+  }
+
+  const handleVerifyOtp = (e) => {
+    e.preventDefault()
+    if (otpCode.trim().length === 6) {
+      onAuthenticate()
+    }
+  }
+
+  const inputBase =
+    'w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400'
+  const labelBlock =
+    'group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm'
+  const underline =
+    'block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100'
+  const btnPrimary =
+    'w-full rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95'
+  const btnSecondary =
+    'w-full rounded-xl border border-[var(--earth-olive)]/20 py-3 text-sm font-medium text-[var(--deep-olive)] transition duration-150 hover:bg-[#eff5ed] active:scale-95'
 
   return (
     <section className="h-full overflow-y-auto bg-[#f4f7f4] px-4 pb-6 pt-4">
@@ -43,55 +77,135 @@ function Auth({ onAuthenticate }) {
           </span>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Email</p>
-            <input
-              type="email"
-              value={credentials.email}
-              onChange={(event) =>
-                setCredentials((current) => ({
-                  ...current,
-                  email: event.target.value,
-                }))
-              }
-              className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
-              placeholder="name@local.app"
-              required
-            />
-            <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
-          </label>
+        {/* Verify OTP */}
+        {stage === 'verify_otp' && (
+          <form onSubmit={handleVerifyOtp} className="space-y-3.5">
+            <p className="text-center text-sm text-gray-600">
+              We sent a 6-digit code to <span className="font-medium text-gray-800">{signupData.email}</span>
+            </p>
+            <label className={labelBlock}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Verification code</p>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className={`${inputBase} text-center text-lg tracking-[0.4em]`}
+                placeholder="000000"
+                required
+              />
+              <span className={underline} />
+            </label>
+            <button type="submit" className={btnPrimary} disabled={otpCode.length !== 6}>
+              Verify
+            </button>
+            <button type="button" onClick={() => setStage('signup')} className={btnSecondary}>
+              Change email
+            </button>
+          </form>
+        )}
 
-          <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
-            <input
-              type="password"
-              value={credentials.password}
-              onChange={(event) =>
-                setCredentials((current) => ({
-                  ...current,
-                  password: event.target.value,
-                }))
-              }
-              className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
-              placeholder="Enter password"
-              required
-            />
-            <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
-          </label>
+        {/* Login */}
+        {stage === 'login' && (
+          <form onSubmit={handleLoginSubmit} className="space-y-3.5">
+            <label className={labelBlock}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Email</p>
+              <input
+                type="email"
+                value={loginCredentials.email}
+                onChange={(e) => setLoginCredentials((c) => ({ ...c, email: e.target.value }))}
+                className={inputBase}
+                placeholder="name@example.com"
+                required
+              />
+              <span className={underline} />
+            </label>
+            <label className={labelBlock}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
+              <input
+                type="password"
+                value={loginCredentials.password}
+                onChange={(e) => setLoginCredentials((c) => ({ ...c, password: e.target.value }))}
+                className={inputBase}
+                placeholder="Enter password"
+                required
+              />
+              <span className={underline} />
+            </label>
+            <button type="submit" className={btnPrimary}>
+              Sign In
+            </button>
+            <button type="button" onClick={() => setStage('signup')} className={btnSecondary}>
+              Create account
+            </button>
+          </form>
+        )}
 
-          <button
-            type="submit"
-            className="w-full rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95"
-          >
-            Sign In
-          </button>
-        </form>
+        {/* Sign Up */}
+        {stage === 'signup' && (
+          <form onSubmit={handleSignupSubmit} className="space-y-3.5">
+            <label className={labelBlock}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Full Name</p>
+              <input
+                type="text"
+                value={signupData.fullName}
+                onChange={(e) => setSignupData((c) => ({ ...c, fullName: e.target.value }))}
+                className={inputBase}
+                placeholder="Your full name"
+                required
+              />
+              <span className={underline} />
+            </label>
+            <label className={labelBlock}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Phone Number</p>
+              <input
+                type="tel"
+                value={signupData.phoneNumber}
+                onChange={(e) => setSignupData((c) => ({ ...c, phoneNumber: e.target.value }))}
+                className={inputBase}
+                placeholder="+91 98765 43210"
+              />
+              <span className={underline} />
+            </label>
+            <label className={labelBlock}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Email</p>
+              <input
+                type="email"
+                value={signupData.email}
+                onChange={(e) => setSignupData((c) => ({ ...c, email: e.target.value }))}
+                className={inputBase}
+                placeholder="name@example.com"
+                required
+              />
+              <span className={underline} />
+            </label>
+            <label className={labelBlock}>
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
+              <input
+                type="password"
+                value={signupData.password}
+                onChange={(e) => setSignupData((c) => ({ ...c, password: e.target.value }))}
+                className={inputBase}
+                placeholder="Min 8 characters"
+                required
+                minLength={8}
+              />
+              <span className={underline} />
+            </label>
+            <button type="submit" className={btnPrimary}>
+              Sign Up
+            </button>
+            <button type="button" onClick={() => setStage('login')} className={btnSecondary}>
+              Already have an account? Sign In
+            </button>
+          </form>
+        )}
 
         <button
           type="button"
           onClick={onAuthenticate}
-          className="mt-3 w-full rounded-xl border border-[var(--earth-olive)]/20 py-3 text-sm font-medium text-[var(--deep-olive)] transition duration-150 hover:bg-[#eff5ed] active:scale-95"
+          className="mt-3 w-full rounded-xl border border-gray-200 py-3 text-sm text-gray-500 transition hover:bg-gray-50 active:scale-95"
         >
           Continue as Guest
         </button>

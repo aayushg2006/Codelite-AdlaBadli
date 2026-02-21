@@ -1,183 +1,209 @@
-import { Check, ScanSearch, Sparkles } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Camera, Check, Loader2, Sparkles, Upload, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import CurvedHeader from '../components/layout/CurvedHeader'
+import { supabase, uploadImageToBucket } from '../lib/supabase'
+
+/** Convert a Base64 data URL into a File for Supabase Storage. */
+function dataURLtoFile(dataurl, filename) {
+  const arr = dataurl.split(',')
+  const mime = arr[0].match(/:(.*?);/)[1]
+  const bstr = atob(arr[1])
+  let n = bstr.length
+  const u8arr = new Uint8Array(n)
+  while (n--) u8arr[n] = bstr.charCodeAt(n)
+  return new File([u8arr], filename, { type: mime })
+}
+
+const AI_MOCK_RESPONSE = {
+  title: 'Vintage Chair',
+  category: 'Furniture',
+  price: '1200',
+  weight: '8',
+  description: 'Solid wood, slight wear.',
+}
 
 function AddItem() {
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
   const [price, setPrice] = useState('')
-  const [description, setDescription] = useState('Excellent condition, recently cleaned and ready for pickup.')
-  const [scanState, setScanState] = useState('idle')
+  const [weight, setWeight] = useState('')
+  const [description, setDescription] = useState('')
+  const [capturedImage, setCapturedImage] = useState(null)
+  const [analyzing, setAnalyzing] = useState(false)
   const [showToast, setShowToast] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState(null)
   const [isHeaderCompact, setIsHeaderCompact] = useState(false)
-  const scanTimerRef = useRef(null)
+  const [cameraError, setCameraError] = useState(null)
+
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const streamRef = useRef(null)
   const toastTimerRef = useRef(null)
+  const fileInputRef = useRef(null)
 
-  useEffect(
-    () => () => {
-      if (scanTimerRef.current) {
-        clearTimeout(scanTimerRef.current)
-      }
-      if (toastTimerRef.current) {
-        clearTimeout(toastTimerRef.current)
-      }
-    },
-    []
-  )
-
-  const startScan = () => {
-    if (scanState === 'scanning') {
-      return
+  const startCamera = useCallback(async () => {
+    setCameraError(null)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+      })
+      streamRef.current = stream
+      if (videoRef.current) videoRef.current.srcObject = stream
+    } catch (err) {
+      setCameraError(err.message || 'Could not access camera')
     }
+  }, [])
 
-    setScanState('scanning')
-    setCategory('')
-    setPrice('')
+  useEffect(() => {
+    startCamera()
+    return () => stopCamera()
+  }, [startCamera])
 
-    if (scanTimerRef.current) {
-      clearTimeout(scanTimerRef.current)
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
     }
-
-    scanTimerRef.current = setTimeout(() => {
-      setScanState('done')
-      setCategory('Home Decor')
-      setPrice('42')
-      if (!title) {
-        setTitle('Handwoven Storage Basket')
-      }
-    }, 2000)
   }
 
-  const listItem = () => {
-    if (!title || !category || !price) {
-      return
-    }
-
-    setShowToast(true)
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current)
-    }
-    toastTimerRef.current = setTimeout(() => setShowToast(false), 2200)
+  const capturePhoto = () => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || !streamRef.current) return
+    const ctx = canvas.getContext('2d')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    ctx.drawImage(video, 0, 0)
+    setCapturedImage(canvas.toDataURL('image/jpeg', 0.85))
+    stopCamera()
   }
 
-  const handlePageScroll = (event) => {
-    const shouldCompact = event.currentTarget.scrollTop > 28
-    setIsHeaderCompact((current) => (current === shouldCompact ? current : shouldCompact))
+  const handleFileChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setCapturedImage(reader.result)
+        stopCamera()
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const analyzeWithAI = async () => {
+    setAnalyzing(true)
+    await new Promise((r) => setTimeout(r, 1500)) // Simulation
+    setTitle(AI_MOCK_RESPONSE.title)
+    setCategory(AI_MOCK_RESPONSE.category)
+    setPrice(AI_MOCK_RESPONSE.price)
+    setWeight(AI_MOCK_RESPONSE.weight)
+    setDescription(AI_MOCK_RESPONSE.description)
+    setAnalyzing(false)
+  }
+
+  const handleListingSubmit = async (e) => {
+    e.preventDefault()
+    if (!title || !category || !price) return
+    setUploadError(null)
+    setUploading(true)
+
+    try {
+      let imageUrl = null
+      if (capturedImage) {
+        const fileName = `item_${Date.now()}.jpg`
+        const file = dataURLtoFile(capturedImage, fileName)
+        imageUrl = await uploadImageToBucket(file, 'listings', fileName)
+      }
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) throw new Error('You must be logged in')
+
+      const { error } = await supabase.from('listings').insert([{
+        title, category, price: parseFloat(price),
+        description, weight: weight ? parseFloat(weight) : null,
+        image_url: imageUrl, user_id: user.id
+      }])
+
+      if (error) throw error
+
+      setShowToast(true)
+      resetForm()
+      setTimeout(() => setShowToast(false), 3000)
+    } catch (err) {
+      setUploadError(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const resetForm = () => {
+    setTitle(''); setCategory(''); setPrice(''); setWeight(''); setDescription('')
+    setCapturedImage(null); setUploadError(null)
+    startCamera()
   }
 
   return (
-    <section className="relative flex h-full flex-col">
-      <CurvedHeader
-        title="List an Item"
-        subtitle="AI-powered local pricing, tuned for your neighborhood"
-        compact={isHeaderCompact}
-      />
-
-      <div onScroll={handlePageScroll} className="flex-1 overflow-y-auto px-4 pb-5 pt-4">
+    <section className="relative flex h-full flex-col bg-[#f4f7f4]">
+      <CurvedHeader title="List an Item" compact={isHeaderCompact} />
+      
+      <div onScroll={(e) => setIsHeaderCompact(e.currentTarget.scrollTop > 20)} className="flex-1 overflow-y-auto px-4 pb-10 pt-4">
         <div className="rounded-2xl border border-[#dce7d8] bg-white p-4 shadow-sm">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500">AI Scan</p>
-          <div className="relative mt-3 overflow-hidden rounded-2xl border border-dashed border-[#c4d5bf] bg-[#eef4eb] p-4">
-            <div className="relative mx-auto h-44 max-w-[15rem] rounded-xl border border-[#c9d8c4] bg-gradient-to-br from-[#e8f1e4] to-[#d7e7d0]">
-              <div
-                className={`pointer-events-none absolute inset-x-4 h-0.5 rounded-full bg-[var(--eco-accent)]/80 ${
-                  scanState === 'scanning' ? 'animate-scan-line' : 'opacity-0'
-                }`}
-              />
-              <div className="absolute inset-0 grid place-items-center text-[var(--deep-olive)]/75">
-                <ScanSearch size={38} />
+          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
+          
+          {!capturedImage ? (
+            <div className="space-y-3">
+              <div className="relative overflow-hidden rounded-2xl bg-black aspect-[4/3] flex items-center justify-center">
+                {cameraError ? (
+                  <div className="text-white text-xs px-6 text-center">Camera blocked. Use "Upload from Gallery" below.</div>
+                ) : (
+                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                )}
+                <canvas ref={canvasRef} className="hidden" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={capturePhoto} disabled={!!cameraError} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-bold text-white shadow-sm disabled:opacity-50">
+                  <Camera size={18} /> Capture
+                </button>
+                <button type="button" onClick={() => fileInputRef.current.click()} className="flex items-center justify-center gap-2 rounded-xl bg-gray-100 py-3 text-sm font-bold text-gray-700 border border-gray-200">
+                  <Upload size={18} /> Gallery
+                </button>
               </div>
             </div>
-            {scanState === 'scanning' ? (
-              <p className="mt-3 text-center text-sm text-[var(--deep-olive)] animate-shimmer">
-                ✨ AI analyzing locally...
-              </p>
-            ) : (
-              <p className="mt-3 text-center text-sm text-gray-600">Scan an item to auto-fill category and price.</p>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={startScan}
-            className="mt-4 w-full rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95"
-          >
-            {scanState === 'scanning' ? 'Scanning...' : 'Scan with AI'}
-          </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="relative rounded-2xl overflow-hidden aspect-[4/3]">
+                <img src={capturedImage} className="w-full h-full object-cover" alt="Preview" />
+                <button onClick={() => setCapturedImage(null)} className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full"><X size={16}/></button>
+              </div>
+              <button type="button" onClick={analyzeWithAI} disabled={analyzing} className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-sm disabled:opacity-70">
+                {analyzing ? <Loader2 className="animate-spin" size={18}/> : <><Sparkles size={18}/> Analyze with AI</>}
+              </button>
+            </div>
+          )}
         </div>
 
-        <form className="mt-4 space-y-3 rounded-2xl border border-[#dce7d8] bg-white p-4 shadow-sm">
-          <label className="block">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Item Title</p>
-            <input
-              type="text"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]"
-              placeholder="e.g. Handwoven Storage Basket"
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500">Category</p>
-              <input
-                type="text"
-                value={category}
-                onChange={(event) => setCategory(event.target.value)}
-                className={`mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition ${
-                  scanState === 'done'
-                    ? 'border-green-200 bg-green-50 text-green-800 focus:border-green-300'
-                    : 'border-gray-200 text-gray-700 focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]'
-                }`}
-                placeholder="Home Decor"
-              />
-            </label>
-            <label className="block">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500">Suggested Price</p>
-              <input
-                type="number"
-                min="0"
-                value={price}
-                onChange={(event) => setPrice(event.target.value)}
-                className={`mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition ${
-                  scanState === 'done'
-                    ? 'border-green-200 bg-green-50 text-green-800 focus:border-green-300'
-                    : 'border-gray-200 text-gray-700 focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]'
-                }`}
-                placeholder="42"
-              />
-            </label>
+        <form onSubmit={handleListingSubmit} className="mt-4 space-y-4 rounded-2xl border border-[#dce7d8] bg-white p-5 shadow-sm">
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Item Details</span>
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="w-full p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm focus:bg-white focus:ring-2 focus:ring-[#dce7d8] transition-all outline-none" required />
+            <input value={category} onChange={e => setCategory(e.target.value)} placeholder="Category" className="w-full p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" required />
+            <div className="flex gap-2">
+              <input value={price} onChange={e => setPrice(e.target.value)} placeholder="Price (₹)" className="flex-1 p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" required />
+              <input value={weight} onChange={e => setWeight(e.target.value)} placeholder="Weight (kg)" className="flex-1 p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" />
+            </div>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" rows={3} className="w-full p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" />
           </div>
-
-          <label className="block">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Description</p>
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={3}
-              className="mt-1.5 w-full resize-none rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]"
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={listItem}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95 disabled:cursor-not-allowed disabled:bg-[#a7bca1]"
-            disabled={!title || !category || !price}
-          >
-            <Sparkles size={15} />
-            List within 5km
+          
+          {uploadError && <div className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{uploadError}</div>}
+          
+          <button type="submit" disabled={uploading || !title} className="w-full py-4 rounded-xl bg-[var(--deep-olive)] text-white font-bold text-sm shadow-lg disabled:opacity-50 transition-transform active:scale-95">
+            {uploading ? <Loader2 className="animate-spin mx-auto" size={20}/> : 'List Item for Swap'}
           </button>
         </form>
       </div>
 
-      {showToast ? (
-        <div className="pointer-events-none absolute left-1/2 top-4 z-30 -translate-x-1/2 animate-screen-fade rounded-full bg-[var(--deep-olive)] px-4 py-2 text-sm text-white shadow-sm">
-          <span className="flex items-center gap-1.5">
-            <Check size={14} />
-            Your listing is live in local feed
-          </span>
-        </div>
-      ) : null}
+      {showToast && <div className="fixed top-10 left-1/2 -translate-x-1/2 bg-[var(--earth-olive)] text-white px-6 py-3 rounded-full shadow-2xl z-50 animate-bounce flex items-center gap-2"><Check size={18}/> Listing Live!</div>}
     </section>
   )
 }

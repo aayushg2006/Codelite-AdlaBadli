@@ -1,10 +1,28 @@
 import { Compass, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import CurvedHeader from '../components/layout/CurvedHeader'
 import ItemCard from '../components/ui/ItemCard'
+import { listings as mockListings } from '../data/mockData'
+import { supabase } from '../lib/supabase'
 
-function Home({ listings = [], listingsLoading, listingsError, locationStatus, onItemSelect }) {
+function Home({ listings: _listingsFromApp = [], listingsLoading, listingsError, locationStatus, onItemSelect }) {
+  const [items, setItems] = useState([])
+  const [itemsLoading, setItemsLoading] = useState(true)
   const [isHeaderCompact, setIsHeaderCompact] = useState(false)
+
+  useEffect(() => {
+    const fetchListings = async () => {
+      const { data } = await supabase
+        .from('listings')
+        .select('*')
+        .order('created_at', { ascending: false })
+      setItems(data ?? [])
+      setItemsLoading(false)
+    }
+    fetchListings()
+  }, [])
+
+  const displayItems = items.length > 0 ? items : mockListings
 
   const handleFeedScroll = (event) => {
     const shouldCompact = event.currentTarget.scrollTop > 28
@@ -55,12 +73,12 @@ function Home({ listings = [], listingsLoading, listingsError, locationStatus, o
             {listingsError}
           </p>
         )}
-        {listingsLoading && (
-          <p className="py-4 text-center text-sm text-gray-500">Loading nearby items…</p>
+        {itemsLoading && (
+          <p className="py-4 text-center text-sm text-gray-500">Loading listings…</p>
         )}
-        {!listingsLoading && !listingsError && (
+        {!itemsLoading && (
           <div className="grid grid-cols-2 gap-3">
-            {listings.map((item) => (
+            {displayItems.map((item) => (
               <ItemCard key={item.id} item={item} onSelect={() => onItemSelect?.(item)} />
             ))}
           </div>

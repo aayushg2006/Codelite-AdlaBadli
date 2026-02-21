@@ -22,11 +22,24 @@ function ItemCard({ item, onSelect }) {
         onSelect ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#d5e3d1]' : ''
       }`}
     >
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl">
-        <div
-          className="h-full w-full transition duration-500 group-hover:scale-105"
-          style={{ backgroundImage: `linear-gradient(140deg, ${item.imageFrom}, ${item.imageTo})` }}
-        />
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-gray-100">
+        {item.image_url ? (
+          <img
+            src={item.image_url}
+            alt={item.title ?? ''}
+            className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <div
+            className="h-full w-full transition duration-500 group-hover:scale-105"
+            style={{
+              backgroundImage: item.imageFrom && item.imageTo
+                ? `linear-gradient(140deg, ${item.imageFrom}, ${item.imageTo})`
+                : undefined,
+              backgroundColor: !item.imageFrom && !item.imageTo ? '#e5e7eb' : undefined,
+            }}
+          />
+        )}
         <button
           type="button"
           onClick={(event) => {
@@ -43,12 +56,18 @@ function ItemCard({ item, onSelect }) {
         <p className="text-[10px] uppercase tracking-wider text-gray-500">{item.category}</p>
         <h3 className="mt-1 truncate text-sm font-semibold text-gray-800">{item.title}</h3>
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="text-xl font-bold tracking-tight text-[var(--deep-olive)]">${item.price}</p>
-          <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-medium text-gray-600">
-            {item.distanceKm} km
-          </span>
+          <p className="text-xl font-bold tracking-tight text-[var(--deep-olive)]">
+            {item.price != null ? `₹${item.price}` : '—'}
+          </p>
+          {item.distanceKm != null && (
+            <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-medium text-gray-600">
+              {item.distanceKm} km
+            </span>
+          )}
         </div>
-        <p className="mt-1 truncate text-xs text-gray-500">{item.condition}</p>
+        {item.condition != null && item.condition !== '' && (
+          <p className="mt-1 truncate text-xs text-gray-500">{item.condition}</p>
+        )}
       </div>
     </article>
   )

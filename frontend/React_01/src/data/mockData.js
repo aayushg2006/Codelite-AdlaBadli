@@ -151,6 +151,15 @@ export const impactStats = [
   { id: 'carbon', label: 'CO2 Saved', value: 74, unit: 'kg' },
 ]
 
+// For Profile: weight in kg per item (used for carbon calculation: 1kg ≈ 2.5kg CO2 saved)
+export const transactionHistory = [
+  { id: 't1', type: 'swapped', title: 'Cane Accent Chair', weightKg: 8, date: '2024-02-18', partner: 'Arjun' },
+  { id: 't2', type: 'bought', title: 'Ceramic Planter Set', amount: 24, date: '2024-02-15' },
+  { id: 't3', type: 'swapped', title: 'Stainless Cookware', weightKg: 4, date: '2024-02-12', partner: 'Priya' },
+  { id: 't4', type: 'swapped', title: 'Desk Lamp Oak', weightKg: 2, date: '2024-02-10', partner: 'Vikram' },
+  { id: 't5', type: 'bought', title: 'Yoga Mat Pro', amount: 18, date: '2024-02-08' },
+]
+
 export const chatPartner = {
   name: 'Arjun Mehta',
   initials: 'AM',

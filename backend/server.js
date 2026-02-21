@@ -42,26 +42,27 @@ app.get('/api/items/nearby', async (req, res) => {
   return res.json(data);
 });
 
-// n8n workflow webhook: accepts JSON with AI + location fields; coerces numbers from strings
 app.post('/api/listings/ai-webhook', async (req, res) => {
-  const body = req.body || {};
-  const itemName = body.itemName != null ? String(body.itemName) : undefined;
-  const description = body.description != null ? String(body.description) : null;
-  const category = body.category != null ? String(body.category) : undefined;
-  const suggestedPriceINR = body.suggestedPriceINR;
-  const estimatedWeightKg = body.estimatedWeightKg;
-  const lat = body.lat;
-  const lon = body.lon;
-  const user_id = body.user_id != null ? String(body.user_id) : undefined;
+  const body = req.body;
+  const {
+    itemName,
+    description,
+    category,
+    suggestedPriceINR,
+    estimatedWeightKg,
+    lat,
+    lon,
+    user_id
+  } = body;
 
   const missing = [];
-  if (!itemName) missing.push('itemName');
-  if (!category) missing.push('category');
-  if (suggestedPriceINR === undefined || suggestedPriceINR === null || suggestedPriceINR === '') missing.push('suggestedPriceINR');
-  if (estimatedWeightKg === undefined || estimatedWeightKg === null || estimatedWeightKg === '') missing.push('estimatedWeightKg');
-  if (lat === undefined || lat === null || lat === '') missing.push('lat');
-  if (lon === undefined || lon === null || lon === '') missing.push('lon');
-  if (!user_id) missing.push('user_id');
+  if (itemName === undefined || itemName === '') missing.push('itemName');
+  if (category === undefined || category === '') missing.push('category');
+  if (suggestedPriceINR === undefined) missing.push('suggestedPriceINR');
+  if (estimatedWeightKg === undefined) missing.push('estimatedWeightKg');
+  if (lat === undefined) missing.push('lat');
+  if (lon === undefined) missing.push('lon');
+  if (user_id === undefined || user_id === '') missing.push('user_id');
 
   if (missing.length > 0) {
     return res.status(400).json({
@@ -76,11 +77,8 @@ app.post('/api/listings/ai-webhook', async (req, res) => {
     return res.status(400).json({ error: 'lat and lon must be valid numbers' });
   }
 
-  const priceNum = typeof suggestedPriceINR === 'number' ? suggestedPriceINR : parseFloat(suggestedPriceINR);
+  // Coerce estimatedWeightKg to a number to avoid Supabase strict typing errors
   const weightNum = typeof estimatedWeightKg === 'number' ? estimatedWeightKg : parseFloat(estimatedWeightKg);
-  if (Number.isNaN(priceNum)) {
-    return res.status(400).json({ error: 'suggestedPriceINR must be a valid number' });
-  }
 
   const authHeader = req.headers.authorization;
   const supabaseUserClient = authHeader
@@ -93,8 +91,8 @@ app.post('/api/listings/ai-webhook', async (req, res) => {
     p_title: itemName,
     p_description: description ?? null,
     p_category: category,
-    p_price: priceNum,
-    p_ai_metadata: { estimatedWeightKg: Number.isNaN(weightNum) ? estimatedWeightKg : weightNum },
+    p_price: suggestedPriceINR,
+    p_ai_metadata: { estimatedWeightKg: weightNum },
     p_user_id: user_id,
     p_user_lat,
     p_user_lon
@@ -154,39 +152,33 @@ app.post('/api/swaps/propose', requireAuth, async (req, res) => {
 });
 
 app.put('/api/swaps/:id/respond', requireAuth, async (req, res) => {
-  const matchId = req.params.id;
-  const { response } = req.body || {};
+  const { id } = req.params;
+  const { response } = req.body; // 'accept' or 'reject'
+  const user_id = req.user.id;
 
-  if (!response || !['accept', 'reject'].includes(response.toLowerCase())) {
-    return res.status(400).json({
-      error: 'Body must include response: "accept" or "reject"'
-    });
+  if (!['accept', 'reject'].includes(response)) {
+    return res.status(400).json({ error: "Response must be 'accept' or 'reject'" });
   }
 
+  // Verify the match belongs to the user and is pending
   const { data: match, error: fetchError } = await supabase
     .from('matches')
-    .select('id, user_1_id, user_2_id, status')
-    .eq('id', matchId)
+    .select('*')
+    .eq('id', id)
+    .eq('user_2_id', user_id)
+    .eq('status', 'pending')
     .single();
 
   if (fetchError || !match) {
-    return res.status(404).json({ error: 'Match not found' });
+    return res.status(404).json({ error: 'Pending match not found or unauthorized' });
   }
 
-  if (match.status !== 'pending') {
-    return res.status(400).json({ error: 'Match is no longer pending' });
-  }
+  const newStatus = response === 'accept' ? 'accepted' : 'rejected';
 
-  const currentUserId = req.user.id;
-  if (match.user_2_id !== currentUserId) {
-    return res.status(403).json({ error: 'Only the recipient of the swap can respond' });
-  }
-
-  const newStatus = response.toLowerCase() === 'accept' ? 'accepted' : 'rejected';
-  const { data: updated, error: updateError } = await supabase
+  const { data: updatedMatch, error: updateError } = await supabase
     .from('matches')
     .update({ status: newStatus })
-    .eq('id', matchId)
+    .eq('id', id)
     .select()
     .single();
 
@@ -194,7 +186,7 @@ app.put('/api/swaps/:id/respond', requireAuth, async (req, res) => {
     return res.status(500).json({ error: updateError.message });
   }
 
-  return res.json(updated);
+  return res.json(updatedMatch);
 });
 
 const PORT = process.env.PORT || 3000;
