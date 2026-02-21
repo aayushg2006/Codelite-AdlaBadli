@@ -41,6 +41,68 @@ app.get('/api/items/nearby', async (req, res) => {
   return res.json(data);
 });
 
+app.post('/api/listings/ai-webhook', async (req, res) => {
+  const body = req.body;
+  const {
+    itemName,
+    description,
+    category,
+    suggestedPriceINR,
+    estimatedWeightKg,
+    lat,
+    lon,
+    user_id
+  } = body;
+
+  const missing = [];
+  if (itemName === undefined || itemName === '') missing.push('itemName');
+  if (category === undefined || category === '') missing.push('category');
+  if (suggestedPriceINR === undefined) missing.push('suggestedPriceINR');
+  if (estimatedWeightKg === undefined) missing.push('estimatedWeightKg');
+  if (lat === undefined) missing.push('lat');
+  if (lon === undefined) missing.push('lon');
+  if (user_id === undefined || user_id === '') missing.push('user_id');
+
+  if (missing.length > 0) {
+    return res.status(400).json({
+      error: 'Missing required fields',
+      missing
+    });
+  }
+
+  const p_user_lat = typeof lat === 'number' ? lat : parseFloat(lat);
+  const p_user_lon = typeof lon === 'number' ? lon : parseFloat(lon);
+  if (Number.isNaN(p_user_lat) || Number.isNaN(p_user_lon)) {
+    return res.status(400).json({ error: 'lat and lon must be valid numbers' });
+  }
+
+  const authHeader = req.headers.authorization;
+  const supabaseUserClient = authHeader
+    ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
+        global: { headers: { Authorization: authHeader } }
+      })
+    : supabase;
+
+  const mappedData = {
+    p_title: itemName,
+    p_description: description ?? null,
+    p_category: category,
+    p_price: suggestedPriceINR,
+    p_ai_metadata: { estimatedWeightKg },
+    p_user_id: user_id,
+    p_user_lat,
+    p_user_lon
+  };
+
+  const { data, error } = await supabaseUserClient.rpc('insert_listing_with_location', mappedData);
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  return res.status(201).json(data);
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
