@@ -93,6 +93,37 @@ body {
   }
 }
 
+@keyframes orbFloat {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-10px) scale(1.03);
+  }
+}
+
+@keyframes cardRise {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulseGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.22);
+  }
+}
+
 @layer utilities {
   .animate-screen-fade {
     animation: screenFade 260ms ease-out both;
@@ -108,5 +139,17 @@ body {
 
   .animate-message-in {
     animation: messageIn 220ms ease-out both;
+  }
+
+  .animate-orb-float {
+    animation: orbFloat 5.2s ease-in-out infinite;
+  }
+
+  .animate-card-rise {
+    animation: cardRise 420ms ease-out both;
+  }
+
+  .animate-pulse-glow {
+    animation: pulseGlow 2.8s ease-in-out infinite;
   }
 }

@@ -191,7 +191,7 @@ function ChatRoom({ initialMessages, chatPartner, chatContextItem, onBack }) {
                   }
                 }}
                 className="flex-1 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-700 outline-none transition focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]"
-                placeholder="Write a thoughtful message..."
+                placeholder="Write a message..."
               />
               <button
                 type="button"
