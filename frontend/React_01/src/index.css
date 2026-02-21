@@ -124,6 +124,21 @@ body {
   }
 }
 
+@keyframes pillHop {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  38% {
+    transform: translateY(-8px) scale(1.03);
+  }
+  70% {
+    transform: translateY(0) scale(0.98);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
 @layer utilities {
   .animate-screen-fade {
     animation: screenFade 260ms ease-out both;
@@ -151,5 +166,9 @@ body {
 
   .animate-pulse-glow {
     animation: pulseGlow 2.8s ease-in-out infinite;
+  }
+
+  .animate-pill-hop {
+    animation: pillHop 420ms cubic-bezier(0.2, 1, 0.3, 1) both;
   }
 }
