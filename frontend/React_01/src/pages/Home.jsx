@@ -1,82 +1,29 @@
-import { useCallback, useEffect, useState } from 'react'
-import LocalFeed from '../components/feed/LocalFeed'
-import { fetchNotifications, markNotificationAsRead } from '../services/notificationService'
+import { useEffect, useState } from 'react';
+import LocalFeed from "../components/feed/LocalFeed";
 
-function Home({ listings, onItemSelect, wishlistIds = [], onToggleWishlist }) {
-  const [notifications, setNotifications] = useState([])
+function Home() {
+  const [listings, setListings] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isMounted = true
-
-    const loadNotifications = async () => {
-      const data = await fetchNotifications()
-      if (isMounted) {
-        setNotifications(data)
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords;
+      
+      try {
+        // Calls your Express server's geofencing route
+        const res = await fetch(`http://localhost:3000/api/items/nearby?lat=${latitude}&lon=${longitude}`);
+        const data = await res.json();
+        setListings(data);
+      } catch (err) {
+        console.error("Failed to fetch nearby items", err);
+      } finally {
+        setLoading(false);
       }
-    }
+    });
+  }, []);
 
-    loadNotifications()
+  if (loading) return <div>Locating nearby items...</div>;
 
-    return () => {
-      isMounted = false
-    }
-  }, [])
-
-  const markAllNotificationsAsRead = useCallback(async () => {
-    const unreadIds = notifications
-      .filter((notification) => notification.status === 'UNREAD')
-      .map((notification) => notification.id)
-
-    if (!unreadIds.length) {
-      return
-    }
-
-    setNotifications((current) =>
-      current.map((notification) =>
-        unreadIds.includes(notification.id) ? { ...notification, status: 'READ' } : notification
-      )
-    )
-
-    await Promise.all(unreadIds.map((id) => markNotificationAsRead(id)))
-  }, [notifications])
-
-  const findNotificationTargetItem = useCallback(
-    (notification) => {
-      const possibleTitles = [notification.yourItem, notification.matchedItem]
-      return listings.find((item) => possibleTitles.includes(item.title)) || listings[0]
-    },
-    [listings]
-  )
-
-  const handleViewSwapNotification = useCallback(
-    (notification) => {
-      const targetItem = findNotificationTargetItem(notification)
-      if (targetItem) {
-        onItemSelect?.(targetItem)
-      }
-    },
-    [findNotificationTargetItem, onItemSelect]
-  )
-
-  const handleProposeSwapNotification = useCallback(
-    (notification) => {
-      handleViewSwapNotification(notification)
-    },
-    [handleViewSwapNotification]
-  )
-
-  return (
-    <LocalFeed
-      listings={listings}
-      wishlistIds={wishlistIds}
-      onToggleWishlist={onToggleWishlist}
-      onItemSelect={onItemSelect}
-      notifications={notifications}
-      onOpenNotifications={markAllNotificationsAsRead}
-      onViewSwapNotification={handleViewSwapNotification}
-      onProposeSwapNotification={handleProposeSwapNotification}
-    />
-  )
+  return <LocalFeed listings={listings} />;
 }
-
-export default Home
+export default Home;

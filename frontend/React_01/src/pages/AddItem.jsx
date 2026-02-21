@@ -1,109 +1,150 @@
-import { Check, Loader2, Sparkles, Upload, X } from 'lucide-react'
-import { useRef, useState } from 'react'
-import CurvedHeader from '../components/layout/CurvedHeader'
+import { Camera, Leaf, MapPin, Sparkles, UploadCloud, X } from 'lucide-react';
+import { useState } from 'react';
+import { supabase, uploadImageToBucket } from '../lib/supabaseClient';
 
-function AddItem({ session }) {
-  const [title, setTitle] = useState('')
-  const [category, setCategory] = useState('')
-  const [price, setPrice] = useState('')
-  const [weight, setWeight] = useState('')
-  const [description, setDescription] = useState('')
-  const [capturedImage, setCapturedImage] = useState(null)
-  const [analyzing, setAnalyzing] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [showToast, setShowToast] = useState(false)
+function AddItem() {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [status, setStatus] = useState('');
 
-  const fileInputRef = useRef(null)
+  // IMPORTANT: Replace this with your actual n8n webhook URL
+  const N8N_WEBHOOK_URL = 'https://your-n8n-url.com/webhook/740e6f0a-bce8-426e-9a78-0d1dd0c7e3d1';
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => setCapturedImage(reader.result)
-      reader.readAsDataURL(file)
+  const handleImageSelect = (e) => {
+    const selected = e.target.files[0];
+    if (selected) {
+      setFile(selected);
+      setPreview(URL.createObjectURL(selected));
     }
-  }
+  };
 
-  const analyzeWithAI = () => {
-    setAnalyzing(true)
-    setTimeout(() => {
-      setTitle('Vintage Classic Clock')
-      setCategory('Home Decor')
-      setPrice('850')
-      setWeight('1.2')
-      setDescription('Beautiful vintage clock in excellent working condition. Ready to swap!')
-      setAnalyzing(false)
-    }, 1500)
-  }
+  const clearSelection = () => {
+    setFile(null);
+    setPreview(null);
+  };
 
-  const handleListingSubmit = async (e) => {
-    e.preventDefault()
-    setUploading(true)
-    // Demo ke liye safe delay
-    setTimeout(() => {
-      setShowToast(true)
-      setTimeout(() => setShowToast(false), 3000)
-      setTitle('')
-      setCategory('')
-      setPrice('')
-      setWeight('')
-      setDescription('')
-      setCapturedImage(null)
-      setUploading(false)
-    }, 1500)
-  }
+  const handleScanWithAI = async () => {
+    if (!file) return alert("Please select an image first!");
+    
+    setIsLoading(true);
+    setStatus('Getting location...');
+
+    try {
+      navigator.geolocation.getCurrentPosition(async (position) => {
+        const { latitude, longitude } = position.coords;
+        
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("You must be logged in.");
+
+        setStatus('Uploading image securely...');
+        
+        const fileName = `${session.user.id}/${Date.now()}-${file.name}`;
+        const imageUrl = await uploadImageToBucket(file, 'listings', fileName);
+
+        setStatus('AI is analyzing your item...');
+
+        const response = await fetch(N8N_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageUrl: imageUrl,
+            lat: latitude,
+            lon: longitude,
+            user_id: session.user.id,
+            token: session.access_token
+          })
+        });
+
+        if (response.ok) {
+          setStatus('Item listed successfully!');
+          alert("✨ AI successfully categorized and listed your item!");
+          clearSelection(); // Reset the form after success
+        } else {
+          throw new Error("AI Scan failed. Please check the webhook.");
+        }
+      }, (err) => {
+        alert("Location access is required for GeoSwap to work!");
+        setIsLoading(false);
+      });
+    } catch (error) {
+      console.error(error);
+      setStatus(`Error: ${error.message}`);
+    } finally {
+      if (!status.includes('Error')) {
+        setTimeout(() => setIsLoading(false), 1500);
+      } else {
+        setIsLoading(false);
+      }
+    }
+  };
 
   return (
-    <section className="relative flex h-full flex-col">
-      <CurvedHeader title="List an Item" compact={false} />
-
-      <div className="flex-1 overflow-y-auto px-4 pb-5 pt-4">
-        <div className="rounded-2xl border border-[#dce7d8] bg-white p-4 shadow-sm">
-          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-          
-          {!capturedImage ? (
-            <div className="space-y-3">
-              <div className="relative overflow-hidden rounded-2xl bg-gray-50 border-2 border-dashed border-gray-300 aspect-[4/3] flex flex-col items-center justify-center text-gray-400">
-                 <Upload size={32} className="mb-2 text-[var(--earth-olive)]" />
-                 <p className="text-sm font-medium text-gray-500">Upload Item Photo</p>
-              </div>
-              <button type="button" onClick={() => fileInputRef.current.click()} className="w-full flex items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[var(--deep-olive)]">
-                <Upload size={18} /> Choose from Gallery
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="relative rounded-2xl overflow-hidden aspect-[4/3]">
-                <img src={capturedImage} className="w-full h-full object-cover" alt="Preview" />
-                <button onClick={() => setCapturedImage(null)} className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full"><X size={16}/></button>
-              </div>
-              <button type="button" onClick={analyzeWithAI} disabled={analyzing} className="w-full flex items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-sm disabled:opacity-70 transition-all hover:bg-indigo-700">
-                {analyzing ? <Loader2 className="animate-spin" size={18}/> : <><Sparkles size={18}/> Analyze with AI</>}
-              </button>
-            </div>
-          )}
-        </div>
-
-        <form onSubmit={handleListingSubmit} className="mt-4 space-y-4 rounded-2xl border border-[#dce7d8] bg-white p-5 shadow-sm">
-          <div className="space-y-2">
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-[var(--earth-olive)] focus:bg-white transition-colors" required />
-            <input value={category} onChange={e => setCategory(e.target.value)} placeholder="Category" className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-[var(--earth-olive)] focus:bg-white transition-colors" required />
-            <div className="flex gap-2">
-              <input type="number" value={price} onChange={e => setPrice(e.target.value)} placeholder="Price (₹)" className="flex-1 p-3 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-[var(--earth-olive)] focus:bg-white transition-colors" required />
-              <input type="number" step="0.1" value={weight} onChange={e => setWeight(e.target.value)} placeholder="Weight (kg)" className="flex-1 p-3 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-[var(--earth-olive)] focus:bg-white transition-colors" required />
-            </div>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" rows={3} className="w-full p-3 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-[var(--earth-olive)] focus:bg-white transition-colors resize-none" />
+    <section className="h-full overflow-y-auto bg-[#f4f7f4] px-4 pb-24 pt-4">
+      {/* Header Card */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--deep-olive)] to-[var(--earth-olive)] px-5 pb-6 pt-6 text-white shadow-sm">
+        <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-white/10 blur-2xl" />
+        <div className="pointer-events-none absolute -left-10 bottom-2 h-32 w-32 rounded-full bg-[#a5b99d]/25 blur-3xl" />
+        <div className="relative">
+          <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-white/25 bg-white/12 backdrop-blur-sm">
+            <Camera size={24} />
           </div>
-
-          <button type="submit" disabled={!title || !category || !price || uploading || !capturedImage} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--deep-olive)] disabled:opacity-50">
-            {uploading ? <Loader2 className="animate-spin" size={18} /> : <><Sparkles size={15} /> List Item</>}
-          </button>
-        </form>
+          <h1 className="text-2xl font-semibold tracking-tight">Snap & Sell</h1>
+          <p className="mt-1 text-sm text-white/85 flex items-center gap-1.5">
+            <Sparkles size={14} /> Let AI do the heavy lifting
+          </p>
+        </div>
       </div>
 
-      {showToast && <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-[var(--earth-olive)] text-white px-6 py-3 rounded-full shadow-2xl z-50 animate-bounce flex items-center gap-2"><Check size={18}/> Listing Live!</div>}
+      {/* Main Upload Section */}
+      <div className="mt-4 rounded-3xl border border-[#dce7d8] bg-white px-5 pb-6 pt-5 shadow-sm">
+        <div className="mb-5 flex items-center justify-center gap-4 text-xs text-gray-500">
+          <span className="flex items-center gap-1.5"><MapPin size={14} className="text-[var(--deep-olive)]" /> Auto-Geofenced</span>
+          <span className="flex items-center gap-1.5"><Leaf size={14} className="text-[var(--deep-olive)]" /> Carbon Tracked</span>
+        </div>
+
+        {!preview ? (
+          <label className="group relative flex h-64 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-[#f2f4f1] transition hover:border-[var(--earth-olive)] hover:bg-[#ebf3e8]">
+            <UploadCloud size={40} className="mb-3 text-gray-400 transition group-hover:text-[var(--deep-olive)]" />
+            <p className="text-sm font-medium text-gray-700">Tap to upload a photo</p>
+            <p className="mt-1 text-xs text-gray-500">Only 1 photo needed for the AI</p>
+            <input 
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              onChange={handleImageSelect}
+            />
+          </label>
+        ) : (
+          <div className="relative overflow-hidden rounded-2xl border border-gray-200">
+            <img src={preview} alt="Item preview" className="h-64 w-full object-cover" />
+            <button 
+              onClick={clearSelection}
+              className="absolute right-3 top-3 rounded-full bg-black/50 p-1.5 text-white backdrop-blur-sm transition hover:bg-black/70"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* Action Button */}
+        <button 
+          onClick={handleScanWithAI}
+          disabled={!file || isLoading}
+          className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--deep-olive)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isLoading ? (
+            <span className="animate-pulse">{status}</span>
+          ) : (
+            <>
+              <Sparkles size={18} />
+              Scan with AI & List Item
+            </>
+          )}
+        </button>
+      </div>
     </section>
-  )
+  );
 }
 
-export default AddItem
+export default AddItem;

@@ -88,14 +88,13 @@ app.post('/api/listings/ai-webhook', async (req, res) => {
     : supabase;
 
   const mappedData = {
-    p_title: itemName,
-    p_description: description ?? null,
-    p_category: category,
-    p_price: suggestedPriceINR,
-    p_ai_metadata: { estimatedWeightKg: weightNum },
-    p_user_id: user_id,
-    p_user_lat,
-    p_user_lon
+    title: itemName,
+    category: category,
+    price: suggestedPriceINR,
+    ai_metadata: { estimatedWeightKg: weightNum },
+    user_id: user_id,
+    user_lat: p_user_lat,
+    user_lon: p_user_lon
   };
 
   const { data, error } = await supabaseUserClient.rpc('insert_listing_with_location', mappedData);
