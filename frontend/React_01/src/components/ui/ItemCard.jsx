@@ -1,11 +1,27 @@
 import { Heart } from 'lucide-react'
 import { useState } from 'react'
 
-function ItemCard({ item }) {
+function ItemCard({ item, onSelect }) {
   const [isFavorite, setIsFavorite] = useState(item.isFavorite)
 
   return (
-    <article className="group rounded-2xl bg-white p-2.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md">
+    <article
+      role={onSelect ? 'button' : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (!onSelect) {
+          return
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onSelect()
+        }
+      }}
+      className={`group rounded-2xl bg-white p-2.5 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md ${
+        onSelect ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#d5e3d1]' : ''
+      }`}
+    >
       <div className="relative aspect-[4/3] overflow-hidden rounded-xl">
         <div
           className="h-full w-full transition duration-500 group-hover:scale-105"
@@ -13,7 +29,10 @@ function ItemCard({ item }) {
         />
         <button
           type="button"
-          onClick={() => setIsFavorite((current) => !current)}
+          onClick={(event) => {
+            event.stopPropagation()
+            setIsFavorite((current) => !current)
+          }}
           className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full border border-white/30 bg-white/35 text-white shadow-sm backdrop-blur-md transition duration-150 active:scale-95"
           aria-label="Favorite"
         >

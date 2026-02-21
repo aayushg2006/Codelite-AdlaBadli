@@ -3,7 +3,7 @@ import { useState } from 'react'
 import CurvedHeader from '../components/layout/CurvedHeader'
 import ItemCard from '../components/ui/ItemCard'
 
-function Home({ listings }) {
+function Home({ listings, onItemSelect }) {
   const [isHeaderCompact, setIsHeaderCompact] = useState(false)
 
   const handleFeedScroll = (event) => {
@@ -52,7 +52,7 @@ function Home({ listings }) {
 
         <div className="grid grid-cols-2 gap-3">
           {listings.map((item) => (
-            <ItemCard key={item.id} item={item} />
+            <ItemCard key={item.id} item={item} onSelect={() => onItemSelect?.(item)} />
           ))}
         </div>
       </div>

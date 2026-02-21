@@ -19,6 +19,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('home')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authStage, setAuthStage] = useState('entry')
+  const [selectedChatItem, setSelectedChatItem] = useState(chatContextItem)
   const [screenKey, setScreenKey] = useState(0)
 
   const handleTabChange = (tab) => {
@@ -37,7 +38,13 @@ function App() {
     setScreenKey((current) => current + 1)
   }
 
-  let tabContent = <Home listings={listings} />
+  const openChatFromItem = (item) => {
+    setSelectedChatItem(item)
+    setActiveTab('chat')
+    setScreenKey((current) => current + 1)
+  }
+
+  let tabContent = <Home listings={listings} onItemSelect={openChatFromItem} />
 
   if (!isAuthenticated) {
     tabContent =
@@ -49,7 +56,7 @@ function App() {
       <ChatRoom
         initialMessages={initialMessages}
         chatPartner={chatPartner}
-        chatContextItem={chatContextItem}
+        chatContextItem={selectedChatItem}
         onBack={() => handleTabChange('home')}
       />
     )
