@@ -1,16 +1,11 @@
-import { Leaf, Recycle, Star, Trees } from 'lucide-react'
+import { Leaf, Recycle, Trees, TreePine, Sprout } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import OrderHistoryPage from '../components/profile/OrderHistoryPage'
 import ProfileHeader from '../components/profile/ProfileHeader'
 import ItemCard from '../components/ui/ItemCard'
 import StatCard from '../components/ui/StatCard'
 import { transactionHistory } from '../data/mockData'
-import { supabase } from '../lib/supabase'
 
-const DEFAULT_BIO = 'AI & Data Science @ TCET'
-const CO2_KG_PER_KG_SWAPPED = 2.5
-
-/** Determines the eco-tier based on carbon savings. */
 function getEcoTier(carbonSavedKg) {
   if (carbonSavedKg >= 50) return { label: 'Forest', icon: Trees, color: 'text-emerald-700 bg-emerald-100 border-emerald-300' }
   if (carbonSavedKg >= 10) return { label: 'Tree', icon: TreePine, color: 'text-green-700 bg-green-100 border-green-300' }
@@ -23,26 +18,30 @@ const iconMap = {
   carbon: Trees,
 }
 
-function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWishlist }) {
+function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWishlist, session }) {
   const [activeCollection, setActiveCollection] = useState('listings')
   const [isHeaderCompact, setIsHeaderCompact] = useState(false)
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false)
 
+  // FIX: Dynamically handles user name from Auth session or default TCET profile
+  const displayName = session?.user?.user_metadata?.username || profile?.name || 'Gyaneshwar Jha'
+  const displayEmail = session?.user?.email || profile?.email || 'gyaneshwar@tcet.edu.in'
+  const displayBio = 'AI & Data Science @ TCET'
+  
+  const carbonSavedKg = impactStats?.find(s => s.id === 'carbon')?.value || 0
+  const ecoTier = getEcoTier(carbonSavedKg)
+
   const visibleItems = useMemo(() => {
     if (activeCollection === 'wishlist') {
-      return listings.filter((item) => wishlistIds.includes(item.id))
+      return listings?.filter((item) => wishlistIds.includes(item.id)) || []
     }
-    return listings.filter((item) => profile.listingIds.includes(item.id))
-  }, [activeCollection, listings, profile.listingIds, wishlistIds])
+    return listings?.filter((item) => profile?.listingIds?.includes(item.id)) || []
+  }, [activeCollection, listings, profile, wishlistIds])
 
   const handleProfileScroll = (event) => {
     const shouldCompact = event.currentTarget.scrollTop > 28
     setIsHeaderCompact((current) => (current === shouldCompact ? current : shouldCompact))
   }
-
-  if (loading) return <div className="p-10 text-center">Loading Impact Dashboard...</div>
-
-  const EcoIcon = ecoTier.icon
 
   return (
     <section className="flex h-full flex-col">
@@ -70,7 +69,7 @@ function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWis
         <section className="mt-4 rounded-2xl bg-gradient-to-br from-[var(--earth-olive)] to-[var(--deep-olive)] p-4 shadow-sm">
           <p className="text-[10px] uppercase tracking-wider text-white/75">Your Eco Impact</p>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            {impactStats.map((stat) => (
+            {impactStats?.map((stat) => (
               <StatCard
                 key={stat.id}
                 icon={iconMap[stat.id]}
@@ -81,14 +80,14 @@ function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWis
             ))}
           </div>
           <p className="mt-2 text-[10px] text-white/60">
-            Carbon saved: ~{CO2_KG_PER_KG_SWAPPED} kg CO₂ per kg swapped
+            Carbon saved: ~2.5 kg CO₂ per kg swapped
           </p>
         </section>
 
         <section className="mt-5">
           <h3 className="mb-2 text-sm font-semibold text-gray-800">Transaction History</h3>
           <ul className="space-y-2">
-            {transactionHistory.map((t) => (
+            {transactionHistory?.map((t) => (
               <li
                 key={t.id}
                 className={`flex items-center justify-between rounded-xl border px-3 py-2.5 ${
@@ -141,7 +140,7 @@ function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWis
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-3">
-            {visibleItems.map((item) => (
+            {visibleItems?.map((item) => (
               <ItemCard
                 key={`${activeCollection}-${item.id}`}
                 item={item}

@@ -6,24 +6,27 @@ import ChatRoom from './pages/ChatRoom'
 import Entry from './pages/Entry'
 import Home from './pages/Home'
 import Profile from './pages/Profile'
-import { supabase } from './lib/supabase' // Import Supabase!
+import { supabase } from './lib/supabase'
 
+// FIX: Added missing mockData imports that were causing the white screen
 import {
   chatContextItem,
   chatPartner,
   initialMessages,
+  profile,
+  listings,
+  impactStats
 } from './data/mockData'
 
 function App() {
   const [activeTab, setActiveTab] = useState('home')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [session, setSession] = useState(null) // Track the actual user data
+  const [session, setSession] = useState(null)
   const [authStage, setAuthStage] = useState('entry')
   const [selectedChatItem, setSelectedChatItem] = useState(chatContextItem)
-  const [wishlistIds, setWishlistIds] = useState(() => [...profile.wishlistIds])
+  const [wishlistIds, setWishlistIds] = useState(() => profile?.wishlistIds ? [...profile.wishlistIds] : [])
   const [screenKey, setScreenKey] = useState(0)
 
-  // NEW: Listen for Authentication Changes (Email or Google)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
@@ -69,20 +72,19 @@ function App() {
     )
   }
 
-  // Pass the session to components that need it (like Profile or AddItem)
-  let tabContent = (
-    <Home
-      listings={listings}
-      wishlistIds={wishlistIds}
-      onToggleWishlist={handleToggleWishlist}
-      onItemSelect={openChatFromItem}
-    />
-  )
+  let tabContent = null
 
   if (!isAuthenticated) {
-    // Notice we don't need onAuthenticate anymore, the useEffect handles it!
-    tabContent =
-      authStage === 'entry' ? <Entry onGetStarted={openLogin} /> : <Auth />
+    tabContent = authStage === 'entry' ? <Entry onGetStarted={openLogin} /> : <Auth />
+  } else if (activeTab === 'home') {
+    tabContent = (
+      <Home
+        listings={listings}
+        wishlistIds={wishlistIds}
+        onToggleWishlist={handleToggleWishlist}
+        onItemSelect={openChatFromItem}
+      />
+    )
   } else if (activeTab === 'add') {
     tabContent = <AddItem session={session} />
   } else if (activeTab === 'chat') {
@@ -98,11 +100,12 @@ function App() {
   } else if (activeTab === 'profile') {
     tabContent = (
       <Profile
-        profile={profile} // Later we will replace this with real user data
+        profile={profile}
         impactStats={impactStats}
         listings={listings}
         wishlistIds={wishlistIds}
         onToggleWishlist={handleToggleWishlist}
+        session={session}
       />
     )
   }
