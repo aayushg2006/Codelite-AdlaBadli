@@ -3,7 +3,7 @@ import { useState } from 'react'
 import CurvedHeader from '../components/layout/CurvedHeader'
 import ItemCard from '../components/ui/ItemCard'
 
-function Home({ listings, onItemSelect }) {
+function Home({ listings = [], listingsLoading, listingsError, locationStatus, onItemSelect }) {
   const [isHeaderCompact, setIsHeaderCompact] = useState(false)
 
   const handleFeedScroll = (event) => {
@@ -50,11 +50,21 @@ function Home({ listings, onItemSelect }) {
           </div>
         </article>
 
-        <div className="grid grid-cols-2 gap-3">
-          {listings.map((item) => (
-            <ItemCard key={item.id} item={item} onSelect={() => onItemSelect?.(item)} />
-          ))}
-        </div>
+        {listingsError && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {listingsError}
+          </p>
+        )}
+        {listingsLoading && (
+          <p className="py-4 text-center text-sm text-gray-500">Loading nearby items…</p>
+        )}
+        {!listingsLoading && !listingsError && (
+          <div className="grid grid-cols-2 gap-3">
+            {listings.map((item) => (
+              <ItemCard key={item.id} item={item} onSelect={() => onItemSelect?.(item)} />
+            ))}
+          </div>
+        )}
       </div>
     </section>
   )

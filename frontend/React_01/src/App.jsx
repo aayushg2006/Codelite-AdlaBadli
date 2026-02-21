@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import BottomNav from './components/layout/BottomNav'
 import AddItem from './pages/AddItem'
 import Auth from './pages/Auth'
@@ -11,9 +11,10 @@ import {
   chatPartner,
   impactStats,
   initialMessages,
-  listings,
   profile,
 } from './data/mockData'
+
+const API_BASE = 'http://localhost:3000'
 
 function App() {
   const [activeTab, setActiveTab] = useState('home')
@@ -21,6 +22,48 @@ function App() {
   const [authStage, setAuthStage] = useState('entry')
   const [selectedChatItem, setSelectedChatItem] = useState(chatContextItem)
   const [screenKey, setScreenKey] = useState(0)
+
+  const [listings, setListings] = useState([])
+  const [listingsLoading, setListingsLoading] = useState(true)
+  const [listingsError, setListingsError] = useState(null)
+  const [locationStatus, setLocationStatus] = useState('')
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setListingsError('Geolocation is not supported by your browser')
+      setListingsLoading(false)
+      return
+    }
+    setLocationStatus('Getting location…')
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude
+        const lon = position.coords.longitude
+        setLocationStatus(`Nearby · ${lat.toFixed(2)}, ${lon.toFixed(2)}`)
+        try {
+          const res = await fetch(
+            `${API_BASE}/api/items/nearby?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`
+          )
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.error || `Request failed: ${res.status}`)
+          }
+          const data = await res.json()
+          setListings(Array.isArray(data) ? data : [])
+        } catch (err) {
+          setListingsError(err.message || 'Failed to load nearby items')
+          setListings([])
+        } finally {
+          setListingsLoading(false)
+        }
+      },
+      (err) => {
+        setListingsError(err.message || 'Could not get your location')
+        setListingsLoading(false)
+      },
+      { enableHighAccuracy: true }
+    )
+  }, [])
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
@@ -44,7 +87,15 @@ function App() {
     setScreenKey((current) => current + 1)
   }
 
-  let tabContent = <Home listings={listings} onItemSelect={openChatFromItem} />
+  let tabContent = (
+    <Home
+      listings={listings}
+      listingsLoading={listingsLoading}
+      listingsError={listingsError}
+      locationStatus={locationStatus}
+      onItemSelect={openChatFromItem}
+    />
+  )
 
   if (!isAuthenticated) {
     tabContent =
