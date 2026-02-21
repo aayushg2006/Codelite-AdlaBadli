@@ -1,6 +1,7 @@
-import { Leaf, Recycle, Sprout, TreePine, Trees } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
-import CurvedHeader from '../components/layout/CurvedHeader'
+import { Leaf, Recycle, Star, Trees } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import OrderHistoryPage from '../components/profile/OrderHistoryPage'
+import ProfileHeader from '../components/profile/ProfileHeader'
 import ItemCard from '../components/ui/ItemCard'
 import StatCard from '../components/ui/StatCard'
 import { transactionHistory } from '../data/mockData'
@@ -22,64 +23,17 @@ const iconMap = {
   carbon: Trees,
 }
 
-/** Generates initials for the avatar based on name or email. */
-function getInitials(nameOrEmail) {
-  if (!nameOrEmail) return '?'
-  const parts = nameOrEmail.trim().split(/\s+/)
-  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-  if (nameOrEmail.includes('@')) return nameOrEmail.slice(0, 2).toUpperCase()
-  return nameOrEmail.slice(0, 2).toUpperCase()
-}
-
-function Profile({ profile = {}, listings = [] }) {
+function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWishlist }) {
   const [activeCollection, setActiveCollection] = useState('listings')
   const [isHeaderCompact, setIsHeaderCompact] = useState(false)
-  const [userData, setUserData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false)
 
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        setUserData(user ?? null)
-      } catch (err) {
-        console.error('Error fetching user:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadUser()
-  }, [])
-
-  // Dynamic user details derived from Supabase session
-  const displayName = userData?.user_metadata?.full_name || userData?.email?.split('@')[0] || profile?.name || 'User'
-  const displayEmail = userData?.email || profile?.handle || '—'
-  const displayInitials = getInitials(displayName || userData?.email)
-  const displayBio = userData?.user_metadata?.major || userData?.user_metadata?.bio || DEFAULT_BIO
-
-  // Memoized impact statistics calculation
-  const { impactStats, ecoTier } = useMemo(() => {
-    const swapped = transactionHistory.filter((t) => t.type === 'swapped')
-    const totalWeightKg = swapped.reduce((sum, t) => sum + (t.weightKg || 0), 0)
-    const carbonSavedKg = totalWeightKg * CO2_KG_PER_KG_SWAPPED
-    const itemsSaved = transactionHistory.length
-    const tier = getEcoTier(carbonSavedKg)
-    
-    const stats = [
-      { id: 'saved', label: 'Items Saved', value: itemsSaved, unit: '' },
-      { id: 'waste', label: 'Waste Diverted', value: Math.round(totalWeightKg), unit: 'kg' },
-      { id: 'carbon', label: 'Carbon Saved', value: Math.round(carbonSavedKg), unit: 'kg' },
-    ]
-    return { impactStats: stats, ecoTier: tier }
-  }, [])
-
-  // Filter listings based on user interaction (Wishlist vs My Listings)
   const visibleItems = useMemo(() => {
     if (activeCollection === 'wishlist') {
-      return listings.filter((item) => profile?.wishlistIds?.includes(item.id))
+      return listings.filter((item) => wishlistIds.includes(item.id))
     }
-    return listings.filter((item) => profile?.listingIds?.includes(item.id))
-  }, [activeCollection, listings, profile?.listingIds, profile?.wishlistIds])
+    return listings.filter((item) => profile.listingIds.includes(item.id))
+  }, [activeCollection, listings, profile.listingIds, wishlistIds])
 
   const handleProfileScroll = (event) => {
     const shouldCompact = event.currentTarget.scrollTop > 28
@@ -91,32 +45,12 @@ function Profile({ profile = {}, listings = [] }) {
   const EcoIcon = ecoTier.icon
 
   return (
-    <section className="flex h-full flex-col bg-[#f4f7f4]">
-      <div className="relative">
-        <CurvedHeader
-          title="Impact Dashboard"
-          subtitle={profile?.neighborhood || "AdlaBadli Pune"}
-          compact={isHeaderCompact}
-          rightSlot={
-            <div className="flex items-center gap-2">
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-semibold ${ecoTier.color}`}>
-                <EcoIcon size={14} />
-                {ecoTier.label}
-              </span>
-              <span className="rounded-full border border-white/30 bg-white/20 px-2.5 py-1.5 text-xs backdrop-blur-md text-white">
-                Level {profile?.level || 1}
-              </span>
-            </div>
-          }
-        />
-        <div
-          className={`absolute left-1/2 top-full grid -translate-x-1/2 place-items-center rounded-full border-4 border-[#f4f7f4] bg-[#d8e6d4] font-semibold text-[var(--deep-olive)] shadow-sm transition-all duration-300 ${
-            isHeaderCompact ? 'h-16 w-16 -translate-y-[38%] text-lg' : 'h-24 w-24 -translate-y-1/2 text-2xl'
-          }`}
-        >
-          {displayInitials}
-        </div>
-      </div>
+    <section className="flex h-full flex-col">
+      <ProfileHeader
+        profile={profile}
+        isHeaderCompact={isHeaderCompact}
+        onOpenOrderHistory={() => setIsOrderHistoryOpen(true)}
+      />
 
       <div
         onScroll={handleProfileScroll}
@@ -207,18 +141,19 @@ function Profile({ profile = {}, listings = [] }) {
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-3">
-            {visibleItems.length > 0 ? (
-              visibleItems.map((item) => (
-                <ItemCard key={`${activeCollection}-${item.id}`} item={item} />
-              ))
-            ) : (
-              <p className="col-span-2 py-8 text-center text-xs text-gray-400 italic">
-                No items in your {activeCollection === 'wishlist' ? 'wishlist' : 'listings'} yet.
-              </p>
-            )}
+            {visibleItems.map((item) => (
+              <ItemCard
+                key={`${activeCollection}-${item.id}`}
+                item={item}
+                isFavorite={wishlistIds.includes(item.id)}
+                onFavoriteToggle={() => onToggleWishlist?.(item.id)}
+              />
+            ))}
           </div>
         </section>
       </div>
+
+      <OrderHistoryPage isOpen={isOrderHistoryOpen} onClose={() => setIsOrderHistoryOpen(false)} />
     </section>
   )
 }

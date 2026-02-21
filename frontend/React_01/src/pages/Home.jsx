@@ -1,90 +1,81 @@
-import { Compass, Sparkles } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import CurvedHeader from '../components/layout/CurvedHeader'
-import ItemCard from '../components/ui/ItemCard'
-import { listings as mockListings } from '../data/mockData'
-import { supabase } from '../lib/supabase'
+import { useCallback, useEffect, useState } from 'react'
+import LocalFeed from '../components/feed/LocalFeed'
+import { fetchNotifications, markNotificationAsRead } from '../services/notificationService'
 
-function Home({ listings: _listingsFromApp = [], listingsLoading, listingsError, locationStatus, onItemSelect }) {
-  const [items, setItems] = useState([])
-  const [itemsLoading, setItemsLoading] = useState(true)
-  const [isHeaderCompact, setIsHeaderCompact] = useState(false)
+function Home({ listings, onItemSelect, wishlistIds = [], onToggleWishlist }) {
+  const [notifications, setNotifications] = useState([])
 
   useEffect(() => {
-    const fetchListings = async () => {
-      const { data } = await supabase
-        .from('listings')
-        .select('*')
-        .order('created_at', { ascending: false })
-      setItems(data ?? [])
-      setItemsLoading(false)
+    let isMounted = true
+
+    const loadNotifications = async () => {
+      const data = await fetchNotifications()
+      if (isMounted) {
+        setNotifications(data)
+      }
     }
-    fetchListings()
+
+    loadNotifications()
+
+    return () => {
+      isMounted = false
+    }
   }, [])
 
-  const displayItems = items.length > 0 ? items : mockListings
+  const markAllNotificationsAsRead = useCallback(async () => {
+    const unreadIds = notifications
+      .filter((notification) => notification.status === 'UNREAD')
+      .map((notification) => notification.id)
 
-  const handleFeedScroll = (event) => {
-    const shouldCompact = event.currentTarget.scrollTop > 28
-    setIsHeaderCompact((current) => (current === shouldCompact ? current : shouldCompact))
-  }
+    if (!unreadIds.length) {
+      return
+    }
+
+    setNotifications((current) =>
+      current.map((notification) =>
+        unreadIds.includes(notification.id) ? { ...notification, status: 'READ' } : notification
+      )
+    )
+
+    await Promise.all(unreadIds.map((id) => markNotificationAsRead(id)))
+  }, [notifications])
+
+  const findNotificationTargetItem = useCallback(
+    (notification) => {
+      const possibleTitles = [notification.yourItem, notification.matchedItem]
+      return listings.find((item) => possibleTitles.includes(item.title)) || listings[0]
+    },
+    [listings]
+  )
+
+  const handleViewSwapNotification = useCallback(
+    (notification) => {
+      const targetItem = findNotificationTargetItem(notification)
+      if (targetItem) {
+        onItemSelect?.(targetItem)
+      }
+    },
+    [findNotificationTargetItem, onItemSelect]
+  )
+
+  const handleProposeSwapNotification = useCallback(
+    (notification) => {
+      handleViewSwapNotification(notification)
+    },
+    [handleViewSwapNotification]
+  )
 
   return (
-    <section className="flex h-full flex-col">
-      <CurvedHeader
-        title="Local Feed"
-        subtitle="Fresh swaps from your neighborhood"
-        compact={isHeaderCompact}
-        rightSlot={
-          <div className="rounded-full border border-white/25 bg-white/20 px-3 py-1.5 text-xs font-medium backdrop-blur-md">
-            5 km
-          </div>
-        }
-      >
-        <div className="flex items-center justify-between rounded-2xl border border-white/20 bg-white/10 px-3 py-2.5 backdrop-blur-sm">
-          <span className="flex items-center gap-1.5 text-xs text-white/90">
-            <Sparkles size={14} />
-            34 new swaps nearby today
-          </span>
-          <button
-            type="button"
-            className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/90 transition duration-150 active:scale-95"
-          >
-            Smart Sort
-          </button>
-        </div>
-      </CurvedHeader>
-
-      <div onScroll={handleFeedScroll} className="flex-1 overflow-y-auto px-4 pb-5 pt-4">
-        <article className="mb-4 rounded-2xl border border-[#dce7d8] bg-white p-3 shadow-sm">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500">Neighborhood Pulse</p>
-          <div className="mt-2 flex items-center justify-between">
-            <p className="max-w-[70%] text-sm text-gray-700">
-              Your circle diverted <span className="font-semibold text-[var(--deep-olive)]">132kg waste</span> this week.
-            </p>
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-[#ebf3e8] text-[var(--deep-olive)]">
-              <Compass size={16} />
-            </div>
-          </div>
-        </article>
-
-        {listingsError && (
-          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            {listingsError}
-          </p>
-        )}
-        {itemsLoading && (
-          <p className="py-4 text-center text-sm text-gray-500">Loading listings…</p>
-        )}
-        {!itemsLoading && (
-          <div className="grid grid-cols-2 gap-3">
-            {displayItems.map((item) => (
-              <ItemCard key={item.id} item={item} onSelect={() => onItemSelect?.(item)} />
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
+    <LocalFeed
+      listings={listings}
+      wishlistIds={wishlistIds}
+      onToggleWishlist={onToggleWishlist}
+      onItemSelect={onItemSelect}
+      notifications={notifications}
+      onOpenNotifications={markAllNotificationsAsRead}
+      onViewSwapNotification={handleViewSwapNotification}
+      onProposeSwapNotification={handleProposeSwapNotification}
+    />
   )
 }
 

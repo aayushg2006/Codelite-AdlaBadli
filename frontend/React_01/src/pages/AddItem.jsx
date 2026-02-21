@@ -26,10 +26,9 @@ function AddItem() {
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
   const [price, setPrice] = useState('')
-  const [weight, setWeight] = useState('')
-  const [description, setDescription] = useState('')
-  const [capturedImage, setCapturedImage] = useState(null)
-  const [analyzing, setAnalyzing] = useState(false)
+  const [estimatedWeight, setEstimatedWeight] = useState('')
+  const [description, setDescription] = useState('Excellent condition, recently cleaned and ready for pickup.')
+  const [scanState, setScanState] = useState('idle')
   const [showToast, setShowToast] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
@@ -40,92 +39,48 @@ function AddItem() {
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const toastTimerRef = useRef(null)
-  const fileInputRef = useRef(null)
 
-  const startCamera = useCallback(async () => {
-    setCameraError(null)
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
-      })
-      streamRef.current = stream
-      if (videoRef.current) videoRef.current.srcObject = stream
-    } catch (err) {
-      setCameraError(err.message || 'Could not access camera')
-    }
-  }, [])
-
-  useEffect(() => {
-    startCamera()
-    return () => stopCamera()
-  }, [startCamera])
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-    }
-  }
-
-  const capturePhoto = () => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas || !streamRef.current) return
-    const ctx = canvas.getContext('2d')
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    ctx.drawImage(video, 0, 0)
-    setCapturedImage(canvas.toDataURL('image/jpeg', 0.85))
-    stopCamera()
-  }
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setCapturedImage(reader.result)
-        stopCamera()
+  useEffect(
+    () => () => {
+      if (scanTimerRef.current) {
+        clearTimeout(scanTimerRef.current)
       }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  const analyzeWithAI = async () => {
-    setAnalyzing(true)
-    await new Promise((r) => setTimeout(r, 1500)) // Simulation
-    setTitle(AI_MOCK_RESPONSE.title)
-    setCategory(AI_MOCK_RESPONSE.category)
-    setPrice(AI_MOCK_RESPONSE.price)
-    setWeight(AI_MOCK_RESPONSE.weight)
-    setDescription(AI_MOCK_RESPONSE.description)
-    setAnalyzing(false)
-  }
-
-  const handleListingSubmit = async (e) => {
-    e.preventDefault()
-    if (!title || !category || !price) return
-    setUploadError(null)
-    setUploading(true)
-
-    try {
-      let imageUrl = null
-      if (capturedImage) {
-        const fileName = `item_${Date.now()}.jpg`
-        const file = dataURLtoFile(capturedImage, fileName)
-        imageUrl = await uploadImageToBucket(file, 'listings', fileName)
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current)
       }
+    },
+    []
+  )
 
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('You must be logged in')
+  const startScan = () => {
+    if (scanState === 'scanning') {
+      return
+    }
 
-      const { error } = await supabase.from('listings').insert([{
-        title, category, price: parseFloat(price),
-        description, weight: weight ? parseFloat(weight) : null,
-        image_url: imageUrl, user_id: user.id
-      }])
+    setScanState('scanning')
+    setCategory('')
+    setPrice('')
+    setEstimatedWeight('')
 
-      if (error) throw error
+    if (scanTimerRef.current) {
+      clearTimeout(scanTimerRef.current)
+    }
+
+    scanTimerRef.current = setTimeout(() => {
+      setScanState('done')
+      setCategory('Home Decor')
+      setPrice('42')
+      setEstimatedWeight('2.4')
+      if (!title) {
+        setTitle('Handwoven Storage Basket')
+      }
+    }, 2000)
+  }
+
+  const listItem = () => {
+    if (!title || !category || !price || !estimatedWeight) {
+      return
+    }
 
       setShowToast(true)
       resetForm()
@@ -144,10 +99,13 @@ function AddItem() {
   }
 
   return (
-    <section className="relative flex h-full flex-col bg-[#f4f7f4]">
-      <CurvedHeader title="List an Item" compact={isHeaderCompact} />
-      
-      <div onScroll={(e) => setIsHeaderCompact(e.currentTarget.scrollTop > 20)} className="flex-1 overflow-y-auto px-4 pb-10 pt-4">
+    <section className="relative flex h-full flex-col">
+      <CurvedHeader
+        title="List an Item"
+        compact={isHeaderCompact}
+      />
+
+      <div onScroll={handlePageScroll} className="flex-1 overflow-y-auto px-4 pb-5 pt-4">
         <div className="rounded-2xl border border-[#dce7d8] bg-white p-4 shadow-sm">
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
           
@@ -194,11 +152,42 @@ function AddItem() {
             </div>
             <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" rows={3} className="w-full p-3 rounded-xl border border-gray-100 bg-gray-50 text-sm outline-none" />
           </div>
-          
-          {uploadError && <div className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{uploadError}</div>}
-          
-          <button type="submit" disabled={uploading || !title} className="w-full py-4 rounded-xl bg-[var(--deep-olive)] text-white font-bold text-sm shadow-lg disabled:opacity-50 transition-transform active:scale-95">
-            {uploading ? <Loader2 className="animate-spin mx-auto" size={20}/> : 'List Item for Swap'}
+
+          <label className="block">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500">Estimated Weight (kg)</p>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={estimatedWeight}
+              onChange={(event) => setEstimatedWeight(event.target.value)}
+              className={`mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition ${
+                scanState === 'done'
+                  ? 'border-green-200 bg-green-50 text-green-800 focus:border-green-300'
+                  : 'border-gray-200 text-gray-700 focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]'
+              }`}
+              placeholder="2.4"
+            />
+          </label>
+
+          <label className="block">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500">Description</p>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={3}
+              className="mt-1.5 w-full resize-none rounded-xl border border-gray-200 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]"
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={listItem}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95 disabled:cursor-not-allowed disabled:bg-[#a7bca1]"
+            disabled={!title || !category || !price || !estimatedWeight}
+          >
+            <Sparkles size={15} />
+            List within 5km
           </button>
         </form>
       </div>

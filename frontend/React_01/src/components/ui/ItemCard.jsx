@@ -1,8 +1,19 @@
 import { Heart } from 'lucide-react'
 import { useState } from 'react'
+import { formatPriceINR } from '../../lib/helpers'
 
-function ItemCard({ item, onSelect }) {
-  const [isFavorite, setIsFavorite] = useState(item.isFavorite)
+function ItemCard({ item, onSelect, isFavorite, onFavoriteToggle }) {
+  const [localFavorite, setLocalFavorite] = useState(item.isFavorite)
+  const favorite = typeof isFavorite === 'boolean' ? isFavorite : localFavorite
+
+  const toggleFavorite = () => {
+    if (onFavoriteToggle) {
+      onFavoriteToggle(item.id)
+      return
+    }
+
+    setLocalFavorite((current) => !current)
+  }
 
   return (
     <article
@@ -44,26 +55,23 @@ function ItemCard({ item, onSelect }) {
           type="button"
           onClick={(event) => {
             event.stopPropagation()
-            setIsFavorite((current) => !current)
+            toggleFavorite()
           }}
           className="absolute right-2 top-2 grid h-8 w-8 place-items-center rounded-full border border-white/30 bg-white/35 text-white shadow-sm backdrop-blur-md transition duration-150 active:scale-95"
           aria-label="Favorite"
+          aria-pressed={favorite}
         >
-          <Heart size={14} className={isFavorite ? 'fill-white text-white' : 'text-white'} />
+          <Heart size={14} className={favorite ? 'fill-white text-white' : 'text-white'} />
         </button>
       </div>
       <div className="px-0.5 pb-1 pt-3">
         <p className="text-[10px] uppercase tracking-wider text-gray-500">{item.category}</p>
         <h3 className="mt-1 truncate text-sm font-semibold text-gray-800">{item.title}</h3>
         <div className="mt-2 flex items-center justify-between gap-2">
-          <p className="text-xl font-bold tracking-tight text-[var(--deep-olive)]">
-            {item.price != null ? `₹${item.price}` : '—'}
-          </p>
-          {item.distanceKm != null && (
-            <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-medium text-gray-600">
-              {item.distanceKm} km
-            </span>
-          )}
+          <p className="text-xl font-bold tracking-tight text-[var(--deep-olive)]">{formatPriceINR(item.price)}</p>
+          <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-medium text-gray-600">
+            {item.distanceKm} km
+          </span>
         </div>
         {item.condition != null && item.condition !== '' && (
           <p className="mt-1 truncate text-xs text-gray-500">{item.condition}</p>

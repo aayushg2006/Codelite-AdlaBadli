@@ -1,143 +1,137 @@
-import {
-  ArrowRight,
-  BadgeCheck,
-  BarChart3,
-  Clock3,
-  Globe2,
-  Recycle,
-  ShieldCheck,
-} from 'lucide-react'
+import { ArrowRight, Repeat2, ShoppingBag, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 
-const features = [
+const launchModes = [
   {
-    id: 'timed',
-    title: 'Timed Pickups',
-    description: 'Auto-confirmed pickup windows keep every local swap predictable.',
-    icon: Clock3,
+    id: 'swap',
+    label: 'Swap',
+    description: 'Exchange useful items with neighbors nearby.',
+    cta: 'Start Swapping',
   },
   {
-    id: 'trusted',
-    title: 'Secure & Auditable',
-    description: 'Verified neighbors, trusted profiles, and transparent exchange history.',
-    icon: ShieldCheck,
+    id: 'buy',
+    label: 'Buy',
+    description: 'Find budget-friendly local deals in minutes.',
+    cta: 'Start Exploring',
   },
   {
-    id: 'smart',
-    title: 'AI Smart Pricing',
-    description: 'Local signals suggest fair prices based on condition and demand.',
-    icon: BadgeCheck,
-  },
-  {
-    id: 'impact',
-    title: 'Impact Insights',
-    description: 'Track items saved, waste diverted, and carbon avoided in your zone.',
-    icon: BarChart3,
+    id: 'reuse',
+    label: 'Reuse',
+    description: 'Keep products in use and reduce daily waste.',
+    cta: 'Start Reusing',
   },
 ]
 
 function Entry({ onGetStarted }) {
+  const [activeMode, setActiveMode] = useState('swap')
+  const [jumpSeed, setJumpSeed] = useState(0)
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+
+  const selectedMode = useMemo(
+    () => launchModes.find((mode) => mode.id === activeMode) ?? launchModes[0],
+    [activeMode]
+  )
+
+  const activeModeIndex = useMemo(() => launchModes.findIndex((mode) => mode.id === activeMode), [activeMode])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      return undefined
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const handleMotionChange = () => setPrefersReducedMotion(mediaQuery.matches)
+
+    handleMotionChange()
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', handleMotionChange)
+      return () => mediaQuery.removeEventListener('change', handleMotionChange)
+    }
+
+    mediaQuery.addListener(handleMotionChange)
+    return () => mediaQuery.removeListener(handleMotionChange)
+  }, [])
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      return undefined
+    }
+
+    const cycleTimer = window.setInterval(() => {
+      setActiveMode((currentMode) => {
+        const currentIndex = launchModes.findIndex((mode) => mode.id === currentMode)
+        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % launchModes.length
+        return launchModes[nextIndex].id
+      })
+    }, 1450)
+
+    return () => window.clearInterval(cycleTimer)
+  }, [prefersReducedMotion])
+
+  useEffect(() => {
+    setJumpSeed((current) => current + 1)
+  }, [activeMode])
+
   return (
-    <section className="flex h-full flex-col overflow-hidden bg-[#f4f7f4]">
-      <div className="flex-1 overflow-y-auto">
-        <div className="relative overflow-hidden bg-[radial-gradient(circle_at_25%_20%,rgba(91,130,110,0.35),transparent_35%),linear-gradient(145deg,#1f3241_0%,#25485b_52%,#2a6e52_100%)] px-5 pb-10 pt-5 text-white">
-          <div className="pointer-events-none absolute -left-12 top-16 h-40 w-40 rounded-full bg-[#83a37d]/20 blur-3xl" />
-          <div className="pointer-events-none absolute -right-10 -top-3 h-44 w-44 rounded-full bg-white/8 blur-3xl" />
+    <section className="relative flex h-full items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_18%_12%,rgba(130,181,153,0.24),transparent_34%),radial-gradient(circle_at_82%_0%,rgba(126,161,218,0.22),transparent_36%),linear-gradient(160deg,#172d3e_0%,#1f4b57_48%,#2b7358_100%)] px-5 text-white">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(120deg,transparent,rgba(255,255,255,0.04),transparent)] opacity-60" />
+      <div className="animate-orb-float pointer-events-none absolute -left-12 top-14 h-40 w-40 rounded-full bg-emerald-300/25 blur-3xl" />
+      <div className="animate-orb-float pointer-events-none absolute -right-20 bottom-6 h-52 w-52 rounded-full bg-cyan-200/20 blur-3xl [animation-delay:800ms]" />
+      <div className="animate-orb-float pointer-events-none absolute bottom-20 left-8 h-28 w-28 rounded-full bg-lime-200/15 blur-2xl [animation-delay:1400ms]" />
 
-          <div className="relative flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/85">
-                <Globe2 size={18} />
-              </span>
-              <span className="text-lg font-semibold tracking-tight">GeoSwap</span>
-            </span>
-            <button
-              type="button"
-              onClick={onGetStarted}
-              className="rounded-xl bg-white/90 px-3.5 py-2 text-xs font-semibold text-gray-800 transition duration-150 active:scale-95"
-            >
-              Sign In
-            </button>
+      <div className="animate-card-rise relative mx-auto w-full max-w-sm rounded-3xl border border-white/20 bg-white/12 p-7 text-center shadow-2xl backdrop-blur-xl">
+        <p className="mx-auto inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/85">
+          <Sparkles size={11} />
+          Local circular community
+        </p>
+        <h1 className="mt-4 text-[2.25rem] font-semibold tracking-tight sm:text-5xl">Adla Badli</h1>
+        <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-white/80">{selectedMode.description}</p>
+
+        <div className="mt-5 relative grid grid-cols-3 rounded-2xl border border-white/20 bg-white/10 p-1">
+          <div
+            className={`pointer-events-none absolute bottom-1 left-1 top-1 z-0 w-[calc((100%-0.5rem)/3)] transition-transform duration-500 ${
+              prefersReducedMotion ? 'ease-linear' : 'ease-[cubic-bezier(0.25,1.34,0.45,1)]'
+            }`}
+            style={{ transform: `translateX(${Math.max(activeModeIndex, 0) * 100}%)` }}
+          >
+            <div
+              key={`pill-${jumpSeed}`}
+              className={`h-full w-full rounded-xl bg-white shadow-[0_6px_18px_rgba(255,255,255,0.34)] ${
+                prefersReducedMotion ? '' : 'animate-pill-hop'
+              }`}
+            />
           </div>
 
-          <div className="relative mt-14 text-center">
-            <p className="mx-auto w-fit rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">
-              Industry-Grade Local Circular Economy
-            </p>
-            <h1 className="mt-6 text-4xl font-semibold leading-tight tracking-tight">
-              Swap Local.
-              <br />
-              <span className="text-[#2fd297]">Live Circular.</span>
-            </h1>
-            <p className="mx-auto mt-4 max-w-xs text-base leading-relaxed text-white/70">
-              A premium neighborhood marketplace for buying, swapping, and reducing everyday waste.
-            </p>
+          {launchModes.map((mode) => {
+            const isActive = mode.id === activeMode
+            const icon =
+              mode.id === 'swap' ? <Repeat2 size={13} /> : mode.id === 'buy' ? <ShoppingBag size={13} /> : <Sparkles size={13} />
 
-            <div className="mt-8 flex items-center justify-center gap-2.5">
+            return (
               <button
+                key={mode.id}
                 type="button"
-                onClick={onGetStarted}
-                className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition duration-150 hover:bg-emerald-400 active:scale-95"
+                onClick={() => setActiveMode(mode.id)}
+                className={`relative z-10 inline-flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[11px] font-semibold transition duration-150 ${
+                  isActive ? 'text-[#214a55]' : 'text-white/75 hover:text-white'
+                }`}
               >
-                Get Started
-                <ArrowRight size={16} />
+                {icon}
+                {mode.label}
               </button>
-              <span className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm text-white/90 backdrop-blur-sm">
-                5km Radius
-              </span>
-            </div>
-          </div>
+            )
+          })}
         </div>
 
-        <div className="-mt-5 rounded-t-[2rem] bg-[#f4f7f4] px-4 pb-8 pt-6">
-          <p className="text-center text-[11px] uppercase tracking-[0.2em] text-gray-500">
-            Every feature built for trusted local swaps
-          </p>
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {features.map((feature) => {
-              const Icon = feature.icon
-
-              return (
-                <article
-                  key={feature.id}
-                  className="rounded-2xl border border-gray-200 bg-white p-3.5 shadow-sm transition duration-200 hover:shadow-md"
-                >
-                  <div className="mb-3 grid h-9 w-9 place-items-center rounded-xl bg-emerald-500 text-white">
-                    <Icon size={17} />
-                  </div>
-                  <h2 className="text-sm font-semibold text-gray-900">{feature.title}</h2>
-                  <p className="mt-1.5 text-xs leading-relaxed text-gray-500">{feature.description}</p>
-                </article>
-              )
-            })}
-          </div>
-
-          <section className="mt-6 rounded-2xl border border-[#dce7d8] bg-white px-4 py-5 text-center shadow-sm">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Neighborhood Ready</p>
-            <h3 className="mt-2 text-2xl font-semibold tracking-tight text-gray-900">
-              Ready to transform your local economy?
-            </h3>
-            <p className="mt-2 text-sm text-gray-500">
-              Join mindful neighbors using GeoSwap for meaningful, low-waste exchange.
-            </p>
-            <button
-              type="button"
-              onClick={onGetStarted}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[var(--earth-olive)] px-5 py-3 text-sm font-semibold text-white transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95"
-            >
-              Start Free Today
-              <ArrowRight size={15} />
-            </button>
-          </section>
-
-          <footer className="mt-6 flex items-center justify-between text-xs text-gray-500">
-            <span className="flex items-center gap-1.5">
-              <Recycle size={13} className="text-[var(--deep-olive)]" />
-              GeoSwap
-            </span>
-            <span>2026 Community Circular Platform</span>
-          </footer>
-        </div>
+        <button
+          type="button"
+          onClick={onGetStarted}
+          className="animate-pulse-glow mx-auto mt-6 inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-6 py-3 text-base font-semibold text-white transition duration-150 hover:bg-emerald-400 active:scale-95"
+        >
+          {selectedMode.cta}
+          <ArrowRight size={18} />
+        </button>
       </div>
     </section>
   )

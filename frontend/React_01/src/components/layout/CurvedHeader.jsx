@@ -1,7 +1,17 @@
-function CurvedHeader({ title, subtitle, rightSlot, children, compact = false, collapseChildren = true }) {
+function CurvedHeader({
+  title,
+  subtitle,
+  rightSlot,
+  children,
+  compact = false,
+  collapseChildren = true,
+  allowOverflow = false,
+}) {
+  const hasSubtitle = Boolean(subtitle)
+
   return (
     <header
-      className={`relative overflow-hidden bg-gradient-to-br from-[var(--deep-olive)] to-[var(--earth-olive)] text-white shadow-sm transition-all duration-300 ${
+      className={`relative ${allowOverflow ? 'overflow-visible' : 'overflow-hidden'} bg-gradient-to-br from-[var(--deep-olive)] to-[var(--earth-olive)] text-white shadow-sm transition-all duration-300 ${
         compact ? 'rounded-b-2xl px-4 pb-3 pt-3' : 'rounded-b-[2.25rem] px-5 pb-6 pt-5'
       }`}
     >
@@ -19,13 +29,15 @@ function CurvedHeader({ title, subtitle, rightSlot, children, compact = false, c
           <h1 className={`font-semibold transition-all duration-300 ${compact ? 'mt-0.5 text-lg' : 'mt-1 text-xl'}`}>
             {title}
           </h1>
-          <p
-            className={`overflow-hidden text-white/80 transition-all duration-300 ${
-              compact ? 'mt-0 max-h-0 -translate-y-1 opacity-0' : 'mt-1 max-h-10 translate-y-0 text-sm opacity-100'
-            }`}
-          >
-            {subtitle}
-          </p>
+          {hasSubtitle ? (
+            <p
+              className={`overflow-hidden text-white/80 transition-all duration-300 ${
+                compact ? 'mt-0 max-h-0 -translate-y-1 opacity-0' : 'mt-1 max-h-10 translate-y-0 text-sm opacity-100'
+              }`}
+            >
+              {subtitle}
+            </p>
+          ) : null}
         </div>
         <div className={`transition-all duration-300 ${compact ? 'scale-95' : ''}`}>{rightSlot}</div>
       </div>

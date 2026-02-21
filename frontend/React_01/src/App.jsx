@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import BottomNav from './components/layout/BottomNav'
 import AddItem from './pages/AddItem'
 import Auth from './pages/Auth'
@@ -6,7 +6,8 @@ import ChatRoom from './pages/ChatRoom'
 import Entry from './pages/Entry'
 import Home from './pages/Home'
 import Profile from './pages/Profile'
-import { supabase } from './lib/supabase' 
+import { supabase } from './lib/supabase' // Import Supabase!
+
 import {
   chatContextItem,
   chatPartner,
@@ -16,20 +17,32 @@ import {
 function App() {
   const [activeTab, setActiveTab] = useState('home')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [session, setSession] = useState(null) // Track the actual user data
   const [authStage, setAuthStage] = useState('entry')
   const [selectedChatItem, setSelectedChatItem] = useState(chatContextItem)
+  const [wishlistIds, setWishlistIds] = useState(() => [...profile.wishlistIds])
   const [screenKey, setScreenKey] = useState(0)
 
-  // Sync session with Supabase to clear the "Invalid Credentials" error
+  // NEW: Listen for Authentication Changes (Email or Google)
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsAuthenticated(!!session)
-      if (session) setAuthStage('login')
+      setSession(session)
+      if (session) {
+        setIsAuthenticated(true)
+        setActiveTab('home')
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session)
-      if (session) setAuthStage('login')
+      setSession(session)
+      if (session) {
+        setIsAuthenticated(true)
+        setActiveTab('home')
+        setScreenKey((current) => current + 1)
+      } else {
+        setIsAuthenticated(false)
+        setAuthStage('entry')
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -37,7 +50,12 @@ function App() {
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
-    setScreenKey((prev) => prev + 1)
+    setScreenKey((current) => current + 1)
+  }
+
+  const openLogin = () => {
+    setAuthStage('login')
+    setScreenKey((current) => current + 1)
   }
 
   const openChatFromItem = (item) => {
@@ -45,37 +63,48 @@ function App() {
     setActiveTab('chat')
   }
 
-  // Choose content: notice we are NOT passing "profile={profile}" anymore.
-  // This forces the components to use the dynamic Supabase logic.
-  let tabContent = null
+  const handleToggleWishlist = (itemId) => {
+    setWishlistIds((current) =>
+      current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]
+    )
+  }
+
+  // Pass the session to components that need it (like Profile or AddItem)
+  let tabContent = (
+    <Home
+      listings={listings}
+      wishlistIds={wishlistIds}
+      onToggleWishlist={handleToggleWishlist}
+      onItemSelect={openChatFromItem}
+    />
+  )
 
   if (!isAuthenticated) {
-    tabContent = authStage === 'entry' 
-      ? <Entry onGetStarted={() => setAuthStage('login')} /> 
-      : <Auth onAuthenticate={() => setIsAuthenticated(true)} />
-  } else {
-    switch (activeTab) {
-      case 'add':
-        tabContent = <AddItem />
-        break
-      case 'chat':
-        tabContent = (
-          <ChatRoom
-            initialMessages={initialMessages}
-            chatPartner={chatPartner}
-            chatContextItem={selectedChatItem}
-            onBack={() => setActiveTab('home')}
-          />
-        )
-        break
-      case 'profile':
-        tabContent = <Profile /> 
-        break
-      case 'home':
-      default:
-        tabContent = <Home onItemSelect={openChatFromItem} />
-        break
-    }
+    // Notice we don't need onAuthenticate anymore, the useEffect handles it!
+    tabContent =
+      authStage === 'entry' ? <Entry onGetStarted={openLogin} /> : <Auth />
+  } else if (activeTab === 'add') {
+    tabContent = <AddItem session={session} />
+  } else if (activeTab === 'chat') {
+    tabContent = (
+      <ChatRoom
+        initialMessages={initialMessages}
+        chatPartner={chatPartner}
+        chatContextItem={selectedChatItem}
+        onBack={() => handleTabChange('home')}
+        session={session}
+      />
+    )
+  } else if (activeTab === 'profile') {
+    tabContent = (
+      <Profile
+        profile={profile} // Later we will replace this with real user data
+        impactStats={impactStats}
+        listings={listings}
+        wishlistIds={wishlistIds}
+        onToggleWishlist={handleToggleWishlist}
+      />
+    )
   }
 
   return (
