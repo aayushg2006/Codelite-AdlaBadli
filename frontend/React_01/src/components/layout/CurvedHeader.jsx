@@ -1,9 +1,17 @@
-function CurvedHeader({ title, subtitle, rightSlot, children, compact = false, collapseChildren = true }) {
+function CurvedHeader({
+  title,
+  subtitle,
+  rightSlot,
+  children,
+  compact = false,
+  collapseChildren = true,
+  allowOverflow = false,
+}) {
   const hasSubtitle = Boolean(subtitle)
 
   return (
     <header
-      className={`relative overflow-hidden bg-gradient-to-br from-[var(--deep-olive)] to-[var(--earth-olive)] text-white shadow-sm transition-all duration-300 ${
+      className={`relative ${allowOverflow ? 'overflow-visible' : 'overflow-hidden'} bg-gradient-to-br from-[var(--deep-olive)] to-[var(--earth-olive)] text-white shadow-sm transition-all duration-300 ${
         compact ? 'rounded-b-2xl px-4 pb-3 pt-3' : 'rounded-b-[2.25rem] px-5 pb-6 pt-5'
       }`}
     >

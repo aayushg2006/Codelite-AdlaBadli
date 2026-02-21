@@ -136,7 +136,7 @@ export const listings = [
 export const profile = {
   name: 'Riya Sharma',
   handle: '@riya.eco',
-  neighborhood: 'AdlaBadli • Pune',
+  neighborhood: 'AdlaBadli - Pune',
   initials: 'RS',
   rating: 4.9,
   completedSwaps: 87,
@@ -154,13 +154,16 @@ export const impactStats = [
 export const chatPartner = {
   name: 'Arjun Mehta',
   initials: 'AM',
-  status: 'Online • 0.9 km away',
+  status: 'Online - 0.9 km away',
+  phone: '+91 98765 43210',
+  email: 'arjun.mehta@adlabadli.app',
 }
 
 export const chatContextItem = {
   title: 'Cane Accent Chair',
   price: 4200,
   distanceKm: 0.8,
+  description: 'Handwoven cane chair with sturdy teak legs. Minor signs of use and ready for pickup.',
   imageFrom: '#f2e1c3',
   imageTo: '#d4af86',
 }

@@ -1,6 +1,7 @@
 import { Leaf, Recycle, Star, Trees } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import CurvedHeader from '../components/layout/CurvedHeader'
+import OrderHistoryPage from '../components/profile/OrderHistoryPage'
+import ProfileHeader from '../components/profile/ProfileHeader'
 import ItemCard from '../components/ui/ItemCard'
 import StatCard from '../components/ui/StatCard'
 
@@ -13,6 +14,7 @@ const iconMap = {
 function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWishlist }) {
   const [activeCollection, setActiveCollection] = useState('listings')
   const [isHeaderCompact, setIsHeaderCompact] = useState(false)
+  const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false)
 
   const visibleItems = useMemo(() => {
     if (activeCollection === 'wishlist') {
@@ -28,25 +30,11 @@ function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWis
 
   return (
     <section className="flex h-full flex-col">
-      <div className="relative">
-        <CurvedHeader
-          title="Impact Dashboard"
-          subtitle={profile.neighborhood}
-          compact={isHeaderCompact}
-          rightSlot={
-            <div className="rounded-full border border-white/30 bg-white/20 px-2.5 py-1.5 text-xs backdrop-blur-md">
-              Level {profile.level}
-            </div>
-          }
-        />
-        <div
-          className={`absolute left-1/2 top-full grid -translate-x-1/2 place-items-center rounded-full border-4 border-[#f4f7f4] bg-[#d8e6d4] font-semibold text-[var(--deep-olive)] shadow-sm transition-all duration-300 ${
-            isHeaderCompact ? 'h-16 w-16 -translate-y-[38%] text-lg' : 'h-24 w-24 -translate-y-1/2 text-2xl'
-          }`}
-        >
-          {profile.initials}
-        </div>
-      </div>
+      <ProfileHeader
+        profile={profile}
+        isHeaderCompact={isHeaderCompact}
+        onOpenOrderHistory={() => setIsOrderHistoryOpen(true)}
+      />
 
       <div
         onScroll={handleProfileScroll}
@@ -116,6 +104,8 @@ function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWis
           </div>
         </section>
       </div>
+
+      <OrderHistoryPage isOpen={isOrderHistoryOpen} onClose={() => setIsOrderHistoryOpen(false)} />
     </section>
   )
 }
