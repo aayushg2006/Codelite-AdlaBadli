@@ -2,12 +2,24 @@ import { Globe2, Leaf, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 
 function Auth({ onAuthenticate }) {
+  const [authMode, setAuthMode] = useState('signin')
   const [credentials, setCredentials] = useState({
     email: 'riya.local@geoswap.app',
     password: 'securepass123',
   })
+  const [signupData, setSignupData] = useState({
+    username: '',
+    password: '',
+    mobileNumber: '',
+    email: '',
+  })
 
   const handleSubmit = (event) => {
+    event.preventDefault()
+    onAuthenticate()
+  }
+
+  const handleSignupSubmit = (event) => {
     event.preventDefault()
     onAuthenticate()
   }
@@ -43,58 +55,158 @@ function Auth({ onAuthenticate }) {
           </span>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Email</p>
-            <input
-              type="email"
-              value={credentials.email}
-              onChange={(event) =>
-                setCredentials((current) => ({
-                  ...current,
-                  email: event.target.value,
-                }))
-              }
-              className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
-              placeholder="name@local.app"
-              required
-            />
-            <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
-          </label>
-
-          <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
-            <input
-              type="password"
-              value={credentials.password}
-              onChange={(event) =>
-                setCredentials((current) => ({
-                  ...current,
-                  password: event.target.value,
-                }))
-              }
-              className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
-              placeholder="Enter password"
-              required
-            />
-            <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
-          </label>
-
+        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-[#f2f4f1] p-1">
           <button
-            type="submit"
-            className="w-full rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95"
+            type="button"
+            onClick={() => setAuthMode('signin')}
+            className={`rounded-lg py-2.5 text-sm font-semibold transition ${
+              authMode === 'signin'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
           >
             Sign In
           </button>
-        </form>
+          <button
+            type="button"
+            onClick={() => setAuthMode('signup')}
+            className={`rounded-lg py-2.5 text-sm font-semibold transition ${
+              authMode === 'signup'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Sign Up
+          </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={onAuthenticate}
-          className="mt-3 w-full rounded-xl border border-[var(--earth-olive)]/20 py-3 text-sm font-medium text-[var(--deep-olive)] transition duration-150 hover:bg-[#eff5ed] active:scale-95"
-        >
-          Continue as Guest
-        </button>
+        {authMode === 'signin' ? (
+          <form onSubmit={handleSubmit} className="space-y-3.5">
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Email</p>
+              <input
+                type="email"
+                value={credentials.email}
+                onChange={(event) =>
+                  setCredentials((current) => ({
+                    ...current,
+                    email: event.target.value,
+                  }))
+                }
+                className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                placeholder="name@local.app"
+                required
+              />
+              <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
+            </label>
+
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
+              <input
+                type="password"
+                value={credentials.password}
+                onChange={(event) =>
+                  setCredentials((current) => ({
+                    ...current,
+                    password: event.target.value,
+                  }))
+                }
+                className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                placeholder="Enter password"
+                required
+              />
+              <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
+            </label>
+
+            <button
+              type="submit"
+              className="w-full rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95"
+            >
+              Sign In
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleSignupSubmit} className="space-y-3.5">
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Username</p>
+              <input
+                type="text"
+                value={signupData.username}
+                onChange={(event) =>
+                  setSignupData((current) => ({
+                    ...current,
+                    username: event.target.value,
+                  }))
+                }
+                className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                placeholder="Enter username"
+                required
+              />
+              <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
+            </label>
+
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Password</p>
+              <input
+                type="password"
+                value={signupData.password}
+                onChange={(event) =>
+                  setSignupData((current) => ({
+                    ...current,
+                    password: event.target.value,
+                  }))
+                }
+                className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                placeholder="Create password"
+                required
+              />
+              <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
+            </label>
+
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Mobile Number</p>
+              <input
+                type="tel"
+                value={signupData.mobileNumber}
+                onChange={(event) =>
+                  setSignupData((current) => ({
+                    ...current,
+                    mobileNumber: event.target.value,
+                  }))
+                }
+                className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                placeholder="Enter mobile number"
+                required
+              />
+              <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
+            </label>
+
+            <label className="group block rounded-xl border border-gray-200 px-4 py-3 transition focus-within:border-[var(--earth-olive)] focus-within:shadow-sm">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500">Email ID</p>
+              <input
+                type="email"
+                value={signupData.email}
+                onChange={(event) =>
+                  setSignupData((current) => ({
+                    ...current,
+                    email: event.target.value,
+                  }))
+                }
+                className="w-full border-none bg-transparent pt-1 text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                placeholder="name@local.app"
+                required
+              />
+              <span className="block h-0.5 origin-left scale-x-0 bg-[var(--earth-olive)] transition-transform duration-200 group-focus-within:scale-x-100" />
+            </label>
+
+            <button
+              type="submit"
+              className="w-full rounded-xl bg-[var(--deep-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--earth-olive)] active:scale-95"
+            >
+              Sign Up
+            </button>
+          </form>
+        )}
       </div>
     </section>
   )

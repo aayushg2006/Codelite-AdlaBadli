@@ -1,6 +1,7 @@
 import { MoreHorizontal, Phone, SendHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import FlatHeader from '../components/layout/FlatHeader'
+import { formatPriceINR } from '../lib/helpers'
 import ChatBubble from '../components/ui/ChatBubble'
 
 function ChatRoom({ initialMessages, chatPartner, chatContextItem, onBack }) {
@@ -79,7 +80,7 @@ function ChatRoom({ initialMessages, chatPartner, chatContextItem, onBack }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-gray-800">{chatContextItem.title}</p>
             <p className="text-xs text-gray-500">
-              ${chatContextItem.price} • {chatContextItem.distanceKm} km away
+              {formatPriceINR(chatContextItem.price)} - {chatContextItem.distanceKm} km away
             </p>
           </div>
         </div>

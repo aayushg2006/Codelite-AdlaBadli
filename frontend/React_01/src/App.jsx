@@ -20,6 +20,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authStage, setAuthStage] = useState('entry')
   const [selectedChatItem, setSelectedChatItem] = useState(chatContextItem)
+  const [wishlistIds, setWishlistIds] = useState(() => [...profile.wishlistIds])
   const [screenKey, setScreenKey] = useState(0)
 
   const handleTabChange = (tab) => {
@@ -44,7 +45,20 @@ function App() {
     setScreenKey((current) => current + 1)
   }
 
-  let tabContent = <Home listings={listings} onItemSelect={openChatFromItem} />
+  const handleToggleWishlist = (itemId) => {
+    setWishlistIds((current) =>
+      current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]
+    )
+  }
+
+  let tabContent = (
+    <Home
+      listings={listings}
+      wishlistIds={wishlistIds}
+      onToggleWishlist={handleToggleWishlist}
+      onItemSelect={openChatFromItem}
+    />
+  )
 
   if (!isAuthenticated) {
     tabContent =
@@ -61,7 +75,15 @@ function App() {
       />
     )
   } else if (activeTab === 'profile') {
-    tabContent = <Profile profile={profile} impactStats={impactStats} listings={listings} />
+    tabContent = (
+      <Profile
+        profile={profile}
+        impactStats={impactStats}
+        listings={listings}
+        wishlistIds={wishlistIds}
+        onToggleWishlist={handleToggleWishlist}
+      />
+    )
   }
 
   return (

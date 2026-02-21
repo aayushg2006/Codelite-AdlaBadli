@@ -10,16 +10,16 @@ const iconMap = {
   carbon: Trees,
 }
 
-function Profile({ profile, impactStats, listings }) {
+function Profile({ profile, impactStats, listings, wishlistIds = [], onToggleWishlist }) {
   const [activeCollection, setActiveCollection] = useState('listings')
   const [isHeaderCompact, setIsHeaderCompact] = useState(false)
 
   const visibleItems = useMemo(() => {
     if (activeCollection === 'wishlist') {
-      return listings.filter((item) => profile.wishlistIds.includes(item.id))
+      return listings.filter((item) => wishlistIds.includes(item.id))
     }
     return listings.filter((item) => profile.listingIds.includes(item.id))
-  }, [activeCollection, listings, profile.listingIds, profile.wishlistIds])
+  }, [activeCollection, listings, profile.listingIds, wishlistIds])
 
   const handleProfileScroll = (event) => {
     const shouldCompact = event.currentTarget.scrollTop > 28
@@ -106,7 +106,12 @@ function Profile({ profile, impactStats, listings }) {
 
           <div className="mt-3 grid grid-cols-2 gap-3">
             {visibleItems.map((item) => (
-              <ItemCard key={`${activeCollection}-${item.id}`} item={item} />
+              <ItemCard
+                key={`${activeCollection}-${item.id}`}
+                item={item}
+                isFavorite={wishlistIds.includes(item.id)}
+                onFavoriteToggle={() => onToggleWishlist?.(item.id)}
+              />
             ))}
           </div>
         </section>

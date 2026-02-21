@@ -6,6 +6,7 @@ function AddItem() {
   const [title, setTitle] = useState('')
   const [category, setCategory] = useState('')
   const [price, setPrice] = useState('')
+  const [estimatedWeight, setEstimatedWeight] = useState('')
   const [description, setDescription] = useState('Excellent condition, recently cleaned and ready for pickup.')
   const [scanState, setScanState] = useState('idle')
   const [showToast, setShowToast] = useState(false)
@@ -33,6 +34,7 @@ function AddItem() {
     setScanState('scanning')
     setCategory('')
     setPrice('')
+    setEstimatedWeight('')
 
     if (scanTimerRef.current) {
       clearTimeout(scanTimerRef.current)
@@ -42,6 +44,7 @@ function AddItem() {
       setScanState('done')
       setCategory('Home Decor')
       setPrice('42')
+      setEstimatedWeight('2.4')
       if (!title) {
         setTitle('Handwoven Storage Basket')
       }
@@ -49,7 +52,7 @@ function AddItem() {
   }
 
   const listItem = () => {
-    if (!title || !category || !price) {
+    if (!title || !category || !price || !estimatedWeight) {
       return
     }
 
@@ -69,7 +72,6 @@ function AddItem() {
     <section className="relative flex h-full flex-col">
       <CurvedHeader
         title="List an Item"
-        subtitle="AI-powered local pricing, tuned for your neighborhood"
         compact={isHeaderCompact}
       />
 
@@ -149,6 +151,23 @@ function AddItem() {
           </div>
 
           <label className="block">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500">Estimated Weight (kg)</p>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={estimatedWeight}
+              onChange={(event) => setEstimatedWeight(event.target.value)}
+              className={`mt-1.5 w-full rounded-xl border px-3 py-2.5 text-sm outline-none transition ${
+                scanState === 'done'
+                  ? 'border-green-200 bg-green-50 text-green-800 focus:border-green-300'
+                  : 'border-gray-200 text-gray-700 focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]'
+              }`}
+              placeholder="2.4"
+            />
+          </label>
+
+          <label className="block">
             <p className="text-[10px] uppercase tracking-wider text-gray-500">Description</p>
             <textarea
               value={description}
@@ -162,7 +181,7 @@ function AddItem() {
             type="button"
             onClick={listItem}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--earth-olive)] py-3 text-sm font-semibold text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95 disabled:cursor-not-allowed disabled:bg-[#a7bca1]"
-            disabled={!title || !category || !price}
+            disabled={!title || !category || !price || !estimatedWeight}
           >
             <Sparkles size={15} />
             List within 5km
