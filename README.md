@@ -37,9 +37,9 @@ GeoSwap introduces an intent-matching engine on top of a standard local feed:
 
 Replace these placeholders with your hackathon assets:
 
-- Demo Video: `https://your-demo-video-link`
-- Hosted Prototype: `https://your-live-app-link`
-- Pitch Deck / Presentation: `https://your-presentation-link`
+- Demo Video: `https://drive.google.com/file/d/1Inher9WmU6K8Q8Zpkp8o-9Hy2OdGnfxE/view?usp=drive_link`
+- Hosted Prototype: `https://codelite-adla-badli.vercel.app`
+- Pitch Deck / Presentation: `https://www.canva.com/design/DAHB_vZ_CvE/ZcIynTxZRbKVsqVzkZjO7Q/edit?utm_content=DAHB_vZ_CvE&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton`
 
 ---
 
