@@ -13,6 +13,18 @@ app.use(cors());
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+const SMART_MATCH_RADIUS_METERS = 5000;
+const SMART_MATCH_MAX_RESULTS = 20;
+
+function normalizeDistanceKm(row) {
+  const raw = row?.distanceKm ?? row?.distance_km ?? row?.distance ?? 0;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(parsed, 0);
+}
+
 // -------------------------------------------------------------------
 // 1. THE AI SCANNER ROUTE
 // -------------------------------------------------------------------
@@ -89,7 +101,7 @@ app.get('/api/items/nearby', async (req, res) => {
     return res.status(400).json({ error: 'lat and lon must be valid numbers' });
   }
 
-  const radius_meters = 5000;
+  const radius_meters = SMART_MATCH_RADIUS_METERS;
 
   const { data, error } = await supabase.rpc('get_items_within_radius', {
     user_lat, user_lon, radius_meters
@@ -97,6 +109,146 @@ app.get('/api/items/nearby', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   return res.json(data);
+});
+
+// -------------------------------------------------------------------
+// 2b. SMART SWAP MATCH ROUTE (Mutual intent matching in 5km)
+// -------------------------------------------------------------------
+app.get('/api/swaps/smart-matches', async (req, res) => {
+  const { user_id, lat, lon } = req.query;
+
+  if (!user_id) {
+    return res.status(400).json({ error: 'Query parameter user_id is required' });
+  }
+
+  if (lat === undefined || lat === '' || lon === undefined || lon === '') {
+    return res.status(400).json({ error: 'Query parameters lat and lon are required' });
+  }
+
+  const user_lat = parseFloat(lat);
+  const user_lon = parseFloat(lon);
+
+  if (Number.isNaN(user_lat) || Number.isNaN(user_lon)) {
+    return res.status(400).json({ error: 'lat and lon must be valid numbers' });
+  }
+
+  const [myListingsRes, myWishlistRes, nearbyRes] = await Promise.all([
+    supabase.from('listings').select('id, title, user_id').eq('user_id', user_id),
+    supabase.from('wishlists').select('desired_item').eq('user_id', user_id),
+    supabase.rpc('get_items_within_radius', {
+      user_lat,
+      user_lon,
+      radius_meters: SMART_MATCH_RADIUS_METERS,
+    }),
+  ]);
+
+  if (myListingsRes.error) return res.status(500).json({ error: myListingsRes.error.message });
+  if (myWishlistRes.error) return res.status(500).json({ error: myWishlistRes.error.message });
+  if (nearbyRes.error) return res.status(500).json({ error: nearbyRes.error.message });
+
+  const myListings = myListingsRes.data || [];
+  const myWishlistRows = myWishlistRes.data || [];
+  const nearbyListingsRaw = nearbyRes.data || [];
+
+  const myListingIds = myListings.map((item) => item.id).filter(Boolean);
+  const myListingsById = new Map(myListings.map((item) => [item.id, item]));
+  const myWishlistIds = new Set(myWishlistRows.map((row) => row.desired_item).filter(Boolean));
+
+  if (!myListingIds.length || !myWishlistIds.size || !nearbyListingsRaw.length) {
+    return res.json([]);
+  }
+
+  const nearbyListings = nearbyListingsRaw.filter(
+    (listing) => listing?.id && listing?.user_id && listing.user_id !== user_id
+  );
+
+  if (!nearbyListings.length) {
+    return res.json([]);
+  }
+
+  const nearbySellerIds = [...new Set(nearbyListings.map((listing) => listing.user_id))];
+
+  const [nearbyWishlistsRes, nearbyUsersRes] = await Promise.all([
+    supabase
+      .from('wishlists')
+      .select('user_id, desired_item')
+      .in('user_id', nearbySellerIds)
+      .in('desired_item', myListingIds),
+    supabase.from('users').select('id, username').in('id', nearbySellerIds),
+  ]);
+
+  if (nearbyWishlistsRes.error) return res.status(500).json({ error: nearbyWishlistsRes.error.message });
+  if (nearbyUsersRes.error) return res.status(500).json({ error: nearbyUsersRes.error.message });
+
+  const nearbyWishlistRows = nearbyWishlistsRes.data || [];
+  const nearbyUsers = nearbyUsersRes.data || [];
+
+  const sellerWantedMyItemsMap = new Map();
+  for (const row of nearbyWishlistRows) {
+    if (!sellerWantedMyItemsMap.has(row.user_id)) {
+      sellerWantedMyItemsMap.set(row.user_id, new Set());
+    }
+    sellerWantedMyItemsMap.get(row.user_id).add(row.desired_item);
+  }
+
+  const usernameById = new Map(nearbyUsers.map((item) => [item.id, item.username || 'Nearby user']));
+  const dedupe = new Set();
+
+  const notifications = nearbyListings
+    .filter((listing) => myWishlistIds.has(listing.id))
+    .map((listing) => {
+      const sellerWantedSet = sellerWantedMyItemsMap.get(listing.user_id);
+      if (!sellerWantedSet || !sellerWantedSet.size) {
+        return null;
+      }
+
+      const yourItemId = [...sellerWantedSet][0];
+      const yourItem = myListingsById.get(yourItemId);
+      if (!yourItem) {
+        return null;
+      }
+
+      const key = `${listing.id}:${yourItem.id}`;
+      if (dedupe.has(key)) {
+        return null;
+      }
+      dedupe.add(key);
+
+      const distanceKmValue = normalizeDistanceKm(listing);
+      const sellerName = usernameById.get(listing.user_id) || 'Nearby user';
+      const matchedTitle = listing.title || 'an item';
+      const yourTitle = yourItem.title || 'your listing';
+
+      return {
+        id: `smart-${listing.id}-${yourItem.id}`,
+        type: 'SMART_SWAP_MATCH',
+        title: 'Smart Swap Match Found!',
+        message: `${sellerName} (${distanceKmValue.toFixed(1)}km away) is selling "${matchedTitle}" and wants "${yourTitle}".`,
+        distance: `${distanceKmValue.toFixed(1)} km`,
+        matchedItem: matchedTitle,
+        yourItem: yourTitle,
+        matchedListingId: listing.id,
+        yourListingId: yourItem.id,
+        counterpartyId: listing.user_id,
+        matchedListing: {
+          id: listing.id,
+          user_id: listing.user_id,
+          title: listing.title,
+          category: listing.category,
+          price: listing.price,
+          image_url: listing.image_url,
+          ai_metadata: listing.ai_metadata,
+          distanceKm: distanceKmValue,
+        },
+        status: 'UNREAD',
+        createdAt: new Date().toISOString(),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Number.parseFloat(a.distance) - Number.parseFloat(b.distance))
+    .slice(0, SMART_MATCH_MAX_RESULTS);
+
+  return res.json(notifications);
 });
 
 

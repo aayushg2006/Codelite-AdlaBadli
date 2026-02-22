@@ -102,7 +102,14 @@ function App() {
   if (!isAuthenticated) {
     tabContent = authStage === 'entry' ? <Entry onGetStarted={openLogin} /> : <Auth />
   } else if (activeTab === 'home') {
-    tabContent = <Home wishlistIds={wishlistIds} onToggleWishlist={handleToggleWishlist} onItemSelect={openChatFromItem} />
+    tabContent = (
+      <Home
+        session={session}
+        wishlistIds={wishlistIds}
+        onToggleWishlist={handleToggleWishlist}
+        onItemSelect={openChatFromItem}
+      />
+    )
   } else if (activeTab === 'add') {
     tabContent = <AddItem />
   } else if (activeTab === 'chat') {
