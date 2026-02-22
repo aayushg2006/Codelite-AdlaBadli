@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import BottomNav from './components/layout/BottomNav'
 import AddItem from './pages/AddItem'
 import Auth from './pages/Auth'
+import ChatList from './pages/ChatList'
 import ChatRoom from './pages/ChatRoom'
 import Entry from './pages/Entry'
 import Home from './pages/Home'
@@ -13,7 +14,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [session, setSession] = useState(null)
   const [authStage, setAuthStage] = useState('entry')
-  const [selectedChatItem, setSelectedChatItem] = useState(null)
+  const [selectedChatSelection, setSelectedChatSelection] = useState(null)
   const [wishlistIds, setWishlistIds] = useState([])
 
   // Ensure the user exists in public.users to prevent database foreign-key crashes!
@@ -63,7 +64,12 @@ function App() {
   const openLogin = () => setAuthStage('login')
 
   const openChatFromItem = (item) => {
-    setSelectedChatItem(item)
+    setSelectedChatSelection({
+      source: 'listing',
+      listingId: item.id,
+      sellerId: item.user_id,
+      listing: item,
+    })
     setActiveTab('chat')
   }
 
@@ -100,7 +106,34 @@ function App() {
   } else if (activeTab === 'add') {
     tabContent = <AddItem />
   } else if (activeTab === 'chat') {
-    tabContent = <ChatRoom chatContextItem={selectedChatItem} onBack={() => handleTabChange('home')} session={session} />
+    if (selectedChatSelection) {
+      tabContent = (
+        <ChatRoom
+          chatSelection={selectedChatSelection}
+          onBack={() => {
+            if (selectedChatSelection.source === 'listing') {
+              setSelectedChatSelection(null)
+              handleTabChange('home')
+            } else {
+              setSelectedChatSelection(null)
+            }
+          }}
+          session={session}
+        />
+      )
+    } else {
+      tabContent = (
+        <ChatList
+          session={session}
+          onOpenChat={(thread) => {
+            setSelectedChatSelection({
+              ...thread,
+              source: 'list',
+            })
+          }}
+        />
+      )
+    }
   } else if (activeTab === 'profile') {
     tabContent = <Profile wishlistIds={wishlistIds} onToggleWishlist={handleToggleWishlist} session={session} />
   }

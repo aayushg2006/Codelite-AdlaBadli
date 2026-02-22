@@ -1,293 +1,473 @@
 import { MoreHorizontal, SendHorizontal } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import FlatHeader from '../components/layout/FlatHeader'
-import { formatPriceINR } from '../lib/helpers'
 import ChatBubble from '../components/ui/ChatBubble'
-import { supabase } from '../lib/supabaseClient' 
+import { formatPriceINR } from '../lib/helpers'
+import { supabase } from '../lib/supabaseClient'
 
-function ChatRoom({ session, chatContextItem, onBack }) {
+const formatMessageTime = (timestamp) =>
+  new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(timestamp))
+
+const getInitials = (name = 'U') =>
+  name
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+function ChatRoom({ session, chatSelection, onBack }) {
+  const [chatRecord, setChatRecord] = useState(null)
+  const [contextItem, setContextItem] = useState(chatSelection?.listing || null)
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
-  const [activeChatId, setActiveChatId] = useState(null)
-  
-  const [activeView, setActiveView] = useState('buyer')
+  const [counterparty, setCounterparty] = useState({
+    name: 'Loading...',
+    initials: '--',
+    status: 'Connecting...',
+    id: null,
+  })
+  const [isLoading, setIsLoading] = useState(true)
   const [isContactMenuOpen, setIsContactMenuOpen] = useState(false)
   const [isSwapModalOpen, setIsSwapModalOpen] = useState(false)
-  
-  const [myAvailableListings, setMyAvailableListings] = useState([]);
-  const [selectedOfferId, setSelectedOfferId] = useState('');
-
-  // The state to hold the specific seller's info
-  const [sellerInfo, setSellerInfo] = useState({ name: 'Loading...', initials: '-', status: 'Connecting...' });
+  const [myAvailableListings, setMyAvailableListings] = useState([])
+  const [selectedOfferId, setSelectedOfferId] = useState('')
 
   const scrollRef = useRef(null)
   const contactMenuRef = useRef(null)
 
-  // 1. FETCH SELLER DETAILS
+  const userId = session?.user?.id
+  const isSeller = useMemo(() => chatRecord?.seller_id === userId, [chatRecord, userId])
+
   useEffect(() => {
-    if (chatContextItem?.user_id) {
-      supabase.from('users').select('username, avatar_url').eq('id', chatContextItem.user_id).maybeSingle()
-        .then(({ data }) => {
-          if (data) {
-            setSellerInfo({
-              name: data.username || 'Local User',
-              initials: (data.username || 'U').substring(0, 2).toUpperCase(),
-              status: 'Online'
-            })
-          } else {
-            setSellerInfo({ name: 'Local User', initials: 'U', status: 'Online' })
-          }
-        })
+    if (!isContactMenuOpen) {
+      return undefined
     }
-  }, [chatContextItem])
 
-  // 2. INITIALIZE CHAT IN DB
-  useEffect(() => {
-    if (!session?.user || !chatContextItem) return;
-
-    const initializeChat = async () => {
-      const safeListingId = chatContextItem.id;
-      const sellerId = chatContextItem.user_id; 
-      
-      if (sellerId === session.user.id) {
-        setActiveView('seller');
-        setSellerInfo({ name: 'Your Item', initials: 'ME', status: 'Seller View' })
-        return; 
-      }
-
-      // maybeSingle prevents app crashes if 0 rows exist
-      let { data: chat } = await supabase
-        .from('chats')
-        .select('*')
-        .eq('listing_id', safeListingId)
-        .eq('buyer_id', session.user.id)
-        .maybeSingle()
-
-      if (!chat) {
-        // Just in case the seller skipped auth sync, silently insert a dummy user row so FK constraints don't break
-        await supabase.from('users').upsert({ id: sellerId, username: 'Local User' }, { onConflict: 'id', ignoreDuplicates: true });
-
-        const { data: newChat, error: insertError } = await supabase
-          .from('chats')
-          .insert({ listing_id: safeListingId, buyer_id: session.user.id, seller_id: sellerId })
-          .select()
-          .single()
-          
-        if (insertError) {
-          console.error("Failed to create chat:", insertError);
-          return;
-        }
-        chat = newChat;
-      }
-
-      if (chat) {
-        setActiveChatId(chat.id)
-        const { data: history } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('chat_id', chat.id)
-          .order('created_at', { ascending: true })
-          
-        if (history) {
-          const formattedHistory = history.map(msg => ({
-            id: msg.id,
-            sender: msg.sender_id === session.user.id ? 'me' : 'them',
-            text: msg.content,
-            time: new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(msg.created_at))
-          }))
-          setMessages(formattedHistory)
-        }
+    const handleOutsideClick = (event) => {
+      if (contactMenuRef.current && !contactMenuRef.current.contains(event.target)) {
+        setIsContactMenuOpen(false)
       }
     }
-    initializeChat()
-  }, [session, chatContextItem])
 
-  // 3. LOAD LISTINGS FOR SWAPS
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [isContactMenuOpen])
+
   useEffect(() => {
-    if (isSwapModalOpen && session?.user) {
-      supabase.from('listings')
-        .select('id, title')
-        .eq('user_id', session.user.id)
-        .eq('status', 'active')
-        .then(({ data }) => {
-          if (data) {
-            setMyAvailableListings(data);
-            if (data.length > 0) setSelectedOfferId(data[0].id);
-          }
-        });
+    if (!chatRecord?.id || !userId || !supabase) {
+      return undefined
     }
-  }, [isSwapModalOpen, session]);
-
-  // 4. SUBSCRIBE TO INSTANT MESSAGES
-  useEffect(() => {
-    if (!activeChatId) return
 
     const channel = supabase
-      .channel(`chat_room_${activeChatId}`)
-      .on('postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${activeChatId}` }, 
+      .channel(`chat-room-${chatRecord.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${chatRecord.id}`,
+        },
         (payload) => {
-          const newMsg = payload.new
-          if (newMsg.sender_id !== session.user.id) {
-            setMessages(current => [...current, {
-              id: newMsg.id,
-              sender: 'them',
-              text: newMsg.content,
-              time: new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(newMsg.created_at))
-            }])
-          }
+          const row = payload.new
+          setMessages((current) => {
+            if (current.some((message) => message.id === row.id)) {
+              return current
+            }
+
+            return [
+              ...current,
+              {
+                id: row.id,
+                sender: row.sender_id === userId ? 'me' : 'other',
+                text: row.content,
+                time: formatMessageTime(row.created_at),
+              },
+            ]
+          })
         }
       )
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
-  }, [activeChatId, session])
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [chatRecord?.id, userId])
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      })
+    }
   }, [messages])
 
-  // 5. SEND MESSAGE
+  useEffect(() => {
+    if (!userId || !chatSelection || !supabase) {
+      return
+    }
+
+    let isMounted = true
+
+    const initializeChat = async () => {
+      if (isMounted) {
+        setIsLoading(true)
+      }
+
+      let resolvedChat = null
+      let resolvedListing = chatSelection.listing || null
+      let sellerId = chatSelection.sellerId || chatSelection.user_id || null
+
+      if (chatSelection.chatId) {
+        const { data, error } = await supabase.from('chats').select('*').eq('id', chatSelection.chatId).maybeSingle()
+        if (error || !data) {
+          if (isMounted) {
+            setIsLoading(false)
+          }
+          return
+        }
+        resolvedChat = data
+        sellerId = data.seller_id
+      } else {
+        const listingId = chatSelection.listingId || chatSelection.id
+        if (!listingId || !sellerId) {
+          if (isMounted) {
+            setIsLoading(false)
+          }
+          return
+        }
+
+        const { data: existingChat } = await supabase
+          .from('chats')
+          .select('*')
+          .eq('listing_id', listingId)
+          .eq('buyer_id', userId)
+          .eq('seller_id', sellerId)
+          .maybeSingle()
+
+        if (existingChat) {
+          resolvedChat = existingChat
+        } else if (sellerId !== userId) {
+          const { data: newChat, error: insertError } = await supabase
+            .from('chats')
+            .insert({
+              listing_id: listingId,
+              buyer_id: userId,
+              seller_id: sellerId,
+            })
+            .select('*')
+            .single()
+
+          if (insertError) {
+            console.error('Failed to create chat:', insertError)
+            if (isMounted) {
+              setIsLoading(false)
+            }
+            return
+          }
+          resolvedChat = newChat
+        }
+      }
+
+      if (!resolvedChat) {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+        return
+      }
+
+      if (!resolvedListing) {
+        const { data: listingData } = await supabase
+          .from('listings')
+          .select('*')
+          .eq('id', resolvedChat.listing_id)
+          .maybeSingle()
+        resolvedListing = listingData || null
+      }
+
+      const otherUserId = resolvedChat.seller_id === userId ? resolvedChat.buyer_id : resolvedChat.seller_id
+      let otherUserName = 'Local User'
+      if (otherUserId) {
+        const { data: userRow } = await supabase
+          .from('users')
+          .select('id, username')
+          .eq('id', otherUserId)
+          .maybeSingle()
+        if (userRow?.username) {
+          otherUserName = userRow.username
+        }
+      }
+
+      const { data: historyRows } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', resolvedChat.id)
+        .order('created_at', { ascending: true })
+
+      if (!isMounted) {
+        return
+      }
+
+      setChatRecord(resolvedChat)
+      setContextItem(resolvedListing)
+      setCounterparty({
+        id: otherUserId,
+        name: otherUserName,
+        initials: getInitials(otherUserName),
+        status: 'Online',
+      })
+      setMessages(
+        (historyRows || []).map((row) => ({
+          id: row.id,
+          sender: row.sender_id === userId ? 'me' : 'other',
+          text: row.content,
+          time: formatMessageTime(row.created_at),
+        }))
+      )
+      setIsLoading(false)
+    }
+
+    initializeChat()
+
+    return () => {
+      isMounted = false
+    }
+  }, [chatSelection, userId])
+
+  useEffect(() => {
+    if (!isSwapModalOpen || !userId || !supabase) {
+      return
+    }
+
+    supabase
+      .from('listings')
+      .select('id, title')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Failed to load listings for swap:', error)
+          return
+        }
+
+        setMyAvailableListings(data || [])
+        setSelectedOfferId((data || [])[0]?.id || '')
+      })
+  }, [isSwapModalOpen, userId])
+
   const sendMessage = async () => {
     const text = draft.trim()
-    if (!text || !session?.user || !activeChatId) return;
+    if (!text || !chatRecord?.id || !userId || !supabase) {
+      return
+    }
 
-    const tempId = `temp-${Date.now()}`
-    const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date())
-    
-    setMessages(current => [...current, { id: tempId, sender: 'me', text, time }])
     setDraft('')
 
     const { error } = await supabase.from('messages').insert({
-        chat_id: activeChatId,
-        sender_id: session.user.id,
-        content: text
+      chat_id: chatRecord.id,
+      sender_id: userId,
+      content: text,
     })
-    
+
     if (error) {
-        console.error("Message failed to send:", error);
-        alert("Failed to send message. Please check database permissions.");
+      alert(`Failed to send message: ${error.message}`)
+      setDraft(text)
     }
   }
 
   const handleProposeSwapSubmit = async () => {
+    if (!selectedOfferId || !session?.access_token || !contextItem?.id) {
+      return
+    }
+
     try {
       const res = await fetch('http://localhost:3000/api/swaps/propose', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          desired_listing_id: chatContextItem.id,
-          offered_listing_id: selectedOfferId
-        })
-      });
-      
-      if (res.ok) {
-        alert("Swap proposed successfully! Waiting for seller to accept.");
-        setIsSwapModalOpen(false);
-      } else {
-        const error = await res.json();
-        alert(error.error || "Failed to propose swap.");
-      }
-    } catch (err) {
-      alert("Network error occurred.");
-    }
-  };
+          desired_listing_id: contextItem.id,
+          offered_listing_id: selectedOfferId,
+        }),
+      })
 
-  if (!chatContextItem) {
+      const result = await res.json()
+
+      if (res.ok) {
+        alert('Swap proposed successfully!')
+        setIsSwapModalOpen(false)
+      } else {
+        alert(result?.error || 'Failed to propose swap.')
+      }
+    } catch {
+      alert('Network error occurred while proposing swap.')
+    }
+  }
+
+  if (!chatSelection) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-        <p className="text-gray-500 mb-4">No item selected.</p>
-        <button onClick={onBack} className="bg-[var(--deep-olive)] text-white px-4 py-2 rounded-lg">Go Back</button>
-      </div>
-    );
+      <section className="flex h-full items-center justify-center px-6 text-center">
+        <p className="text-sm text-gray-500">Open a conversation from Home or Chat list.</p>
+      </section>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <section className="flex h-full items-center justify-center px-6 text-center">
+        <p className="text-sm text-gray-500">Opening chat...</p>
+      </section>
+    )
   }
 
   return (
     <section className="flex h-full flex-col bg-white">
       <FlatHeader
         onBack={onBack}
-        name={sellerInfo.name}
-        status={sellerInfo.status}
-        initials={sellerInfo.initials}
+        name={counterparty.name}
+        status={counterparty.status}
+        initials={counterparty.initials}
         rightSlot={
           <div ref={contactMenuRef} className="relative">
-            <button type="button" onClick={() => setIsContactMenuOpen(c => !c)} className="rounded-full p-2 text-gray-500 hover:bg-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsContactMenuOpen((current) => !current)}
+              className="rounded-full p-2 text-gray-500 transition duration-150 hover:bg-gray-100 active:scale-95"
+              aria-label="Conversation options"
+            >
               <MoreHorizontal size={17} />
             </button>
+            {isContactMenuOpen ? (
+              <div className="absolute right-0 top-10 z-30 w-52 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
+                <p className="text-[10px] uppercase tracking-wider text-gray-500">Conversation</p>
+                <p className="mt-1.5 text-xs text-gray-700">User: {counterparty.name}</p>
+                <p className="mt-1 text-xs text-gray-500">Chat ID: {chatRecord?.id}</p>
+              </div>
+            ) : null}
           </div>
         }
       />
 
-      <div className="px-4 pt-3">
-        <div className="grid grid-cols-2 rounded-xl bg-[#edf2eb] p-1">
-          <button type="button" onClick={() => setActiveView('buyer')} className={`rounded-lg py-2 text-xs font-semibold uppercase tracking-wider transition ${activeView === 'buyer' ? 'bg-white text-[var(--deep-olive)] shadow-sm' : 'text-gray-500'}`}>Buyer POV</button>
-          <button type="button" onClick={() => setActiveView('seller')} className={`rounded-lg py-2 text-xs font-semibold uppercase tracking-wider transition ${activeView === 'seller' ? 'bg-white text-[var(--deep-olive)] shadow-sm' : 'text-gray-500'}`}>Seller POV</button>
+      <div className="mx-4 mt-3 rounded-2xl border border-[#d7e4d3] bg-white p-3 shadow-sm">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500">Context</p>
+        <div className="mt-2 flex items-center gap-3">
+          <div className="h-14 w-14 overflow-hidden rounded-xl bg-gray-100">
+            {contextItem?.ai_metadata?.imageUrl || contextItem?.image_url ? (
+              <img
+                src={contextItem.ai_metadata?.imageUrl || contextItem.image_url}
+                alt={contextItem?.title || 'Listing'}
+                className="h-full w-full object-cover"
+              />
+            ) : null}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-gray-800">{contextItem?.title || 'Listing'}</p>
+            <p className="text-xs text-gray-500">{formatPriceINR(contextItem?.price || 0)}</p>
+          </div>
+        </div>
+
+        {!isSeller ? (
+          <button
+            type="button"
+            onClick={() => setIsSwapModalOpen(true)}
+            className="mt-3 w-full rounded-xl bg-[var(--earth-olive)] py-2.5 text-xs font-semibold uppercase tracking-wider text-white transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95"
+          >
+            Propose Swap
+          </button>
+        ) : (
+          <p className="mt-3 rounded-xl bg-[#f3f6f3] px-3 py-2 text-xs text-gray-600">
+            Seller view: receive messages and swap requests in real time.
+          </p>
+        )}
+      </div>
+
+      <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-4 pb-3 pt-3">
+        {messages.length === 0 ? <p className="text-center text-xs text-gray-400">Start the conversation!</p> : null}
+        {messages.map((message) => (
+          <ChatBubble key={message.id} message={message} />
+        ))}
+      </div>
+
+      <div className="border-t border-gray-200 bg-[#f4f7f4]/95 px-3 pb-3 pt-2 backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                sendMessage()
+              }
+            }}
+            className="flex-1 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-700 outline-none transition focus:border-[var(--earth-olive)] focus:ring-2 focus:ring-[#dce8d8]"
+            placeholder="Write a message..."
+          />
+          <button
+            type="button"
+            onClick={sendMessage}
+            className="grid h-11 w-11 place-items-center rounded-full bg-[var(--earth-olive)] text-white shadow-sm transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95"
+            aria-label="Send message"
+          >
+            <SendHorizontal size={16} />
+          </button>
         </div>
       </div>
 
-      {activeView === 'buyer' ? (
-        <>
-          <div className="mx-4 mt-3 rounded-2xl border border-[#d7e4d3] bg-white p-3 shadow-sm">
-            <p className="text-[10px] uppercase tracking-wider text-gray-500">Context</p>
-            <div className="mt-2 flex items-center gap-3">
-              <div className="h-14 w-14 rounded-xl bg-gray-200 overflow-hidden">
-                <img src={chatContextItem?.ai_metadata?.imageUrl || chatContextItem?.image_url} className="w-full h-full object-cover" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-gray-800">{chatContextItem?.title || 'Unknown Item'}</p>
-                <p className="text-xs text-gray-500">{formatPriceINR(chatContextItem?.price || 0)}</p>
-              </div>
-            </div>
-            <button type="button" onClick={() => setIsSwapModalOpen(true)} className="mt-3 w-full rounded-xl bg-[var(--earth-olive)] py-2.5 text-xs font-semibold uppercase tracking-wider text-white hover:bg-[var(--deep-olive)]">
-              Propose Swap
-            </button>
-          </div>
-
-          <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-4 pb-3 pt-3">
-            {messages.length === 0 && <div className="text-center text-xs text-gray-400 mt-4">Start the conversation!</div>}
-            {messages.map((message) => <ChatBubble key={message.id} message={message} />)}
-          </div>
-
-          <div className="border-t border-gray-200 bg-[#f4f7f4] px-3 pb-3 pt-2">
-            <div className="flex items-center gap-2">
-              <input type="text" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendMessage() }} className="flex-1 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm" placeholder="Write a message..." />
-              <button type="button" onClick={sendMessage} className="grid h-11 w-11 place-items-center rounded-full bg-[var(--earth-olive)] text-white">
-                <SendHorizontal size={16} />
-              </button>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="flex flex-1 items-center justify-center p-6 text-center">
-          <p className="text-sm text-gray-500">Seller POV is active. You are viewing this as the owner.</p>
-        </div>
-      )}
-
-      {isSwapModalOpen && (
-        <div className="fixed inset-0 z-40 grid place-items-center bg-black/35 px-4" onClick={(e) => { if(e.target === e.currentTarget) setIsSwapModalOpen(false) }}>
+      {isSwapModalOpen ? (
+        <div
+          className="fixed inset-0 z-40 grid place-items-center bg-black/35 px-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsSwapModalOpen(false)
+            }
+          }}
+        >
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Propose a Swap</h3>
-            <p className="text-sm text-gray-600 mb-2">Select one of your active items to trade.</p>
-            
-            <select value={selectedOfferId} onChange={(e) => setSelectedOfferId(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg mb-4 text-sm bg-white">
-              {myAvailableListings.length === 0 && <option value="">You have no active listings</option>}
-              {myAvailableListings.map(item => (
-                <option key={item.id} value={item.id}>{item.title}</option>
+            <h3 className="text-lg font-bold text-gray-900">Propose a Swap</h3>
+            <p className="mt-1 text-sm text-gray-600">Choose one of your active listings to offer.</p>
+
+            <select
+              value={selectedOfferId}
+              onChange={(event) => setSelectedOfferId(event.target.value)}
+              className="mt-4 w-full rounded-lg border border-gray-300 bg-white p-2 text-sm"
+            >
+              {!myAvailableListings.length ? <option value="">You have no active listings</option> : null}
+              {myAvailableListings.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
               ))}
             </select>
 
-            <div className="flex gap-2">
-              <button onClick={() => setIsSwapModalOpen(false)} className="flex-1 py-2 text-sm font-semibold text-gray-600 bg-gray-100 rounded-lg">Cancel</button>
-              <button onClick={handleProposeSwapSubmit} disabled={!selectedOfferId} className="flex-1 py-2 text-sm font-semibold text-white bg-[var(--earth-olive)] rounded-lg disabled:opacity-50">
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSwapModalOpen(false)}
+                className="rounded-lg bg-gray-100 py-2 text-sm font-semibold text-gray-600 transition duration-150 hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleProposeSwapSubmit}
+                disabled={!selectedOfferId}
+                className="rounded-lg bg-[var(--earth-olive)] py-2 text-sm font-semibold text-white transition duration-150 hover:bg-[var(--deep-olive)] disabled:opacity-50"
+              >
                 Send Proposal
               </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </section>
   )
 }
