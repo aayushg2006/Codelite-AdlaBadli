@@ -6,146 +6,103 @@ import ChatRoom from './pages/ChatRoom'
 import Entry from './pages/Entry'
 import Home from './pages/Home'
 import Profile from './pages/Profile'
-import { supabase } from './lib/supabase'
-
-// FIX: Added missing mockData imports that were causing the white screen
-import {
-  chatContextItem,
-  chatPartner,
-  initialMessages,
-  profile,
-  listings,
-  impactStats
-} from './data/mockData'
+import { supabase } from './lib/supabaseClient'
 
 function App() {
   const [activeTab, setActiveTab] = useState('home')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [session, setSession] = useState(null)
   const [authStage, setAuthStage] = useState('entry')
-  const [isAuthReady, setIsAuthReady] = useState(false)
-  const [selectedChatItem, setSelectedChatItem] = useState(chatContextItem)
-  const [wishlistIds, setWishlistIds] = useState(() => profile?.wishlistIds ? [...profile.wishlistIds] : [])
+  const [selectedChatItem, setSelectedChatItem] = useState(null)
+  const [wishlistIds, setWishlistIds] = useState([])
+
+  // Ensure the user exists in public.users to prevent database foreign-key crashes!
+  const syncUserToDatabase = async (user) => {
+    if (!user) return;
+    await supabase.from('users').upsert({
+      id: user.id,
+      username: user.user_metadata?.username || user.email.split('@')[0] || 'Local User',
+      avatar_url: user.user_metadata?.avatar_url || ''
+    }, { onConflict: 'id' });
+  };
+
+  const fetchWishlist = async (userId) => {
+    const { data } = await supabase.from('wishlists').select('desired_item').eq('user_id', userId);
+    if (data) setWishlistIds(data.map(item => item.desired_item));
+  };
 
   useEffect(() => {
-    let isMounted = true
-
-    const initializeAuth = async () => {
-      if (!supabase) {
-        if (isMounted) {
-          setIsAuthenticated(false)
-          setAuthStage('login')
-          setIsAuthReady(true)
-        }
-        return
-      }
-
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (!isMounted) {
-        return
-      }
-
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       if (session) {
         setIsAuthenticated(true)
         setActiveTab('home')
-      } else {
-        setIsAuthenticated(false)
-      }
-      setIsAuthReady(true)
-    }
-
-    initializeAuth()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      setSession(nextSession)
-
-      if (nextSession) {
-        setIsAuthenticated(true)
-        setActiveTab('home')
-        return
-      }
-
-      setIsAuthenticated(false)
-
-      // Keep users on login after logout/OAuth callback misses instead of forcing Entry loop.
-      if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
-        setAuthStage('login')
+        syncUserToDatabase(session.user)
+        fetchWishlist(session.user.id)
       }
     })
 
-    return () => {
-      isMounted = false
-      subscription.unsubscribe()
-    }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session) {
+        setIsAuthenticated(true)
+        setActiveTab('home')
+        syncUserToDatabase(session.user)
+        fetchWishlist(session.user.id)
+      } else {
+        setIsAuthenticated(false)
+        setAuthStage('entry')
+        setWishlistIds([])
+      }
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
-  const handleTabChange = (tab) => {
-    setActiveTab(tab)
-  }
-
-  const openLogin = () => {
-    setAuthStage('login')
-  }
+  const handleTabChange = (tab) => setActiveTab(tab)
+  const openLogin = () => setAuthStage('login')
 
   const openChatFromItem = (item) => {
     setSelectedChatItem(item)
     setActiveTab('chat')
   }
 
-  const handleToggleWishlist = (itemId) => {
+  // SAVE HEART CLICKS TO SUPABASE
+  const handleToggleWishlist = async (itemId) => {
+    if (!session) return;
+    
+    const isWished = wishlistIds.includes(itemId);
+    
+    // Optimistic UI update
     setWishlistIds((current) =>
-      current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId]
-    )
+      isWished ? current.filter((id) => id !== itemId) : [...current, itemId]
+    );
+
+    if (isWished) {
+      const { error } = await supabase.from('wishlists').delete()
+        .eq('user_id', session.user.id)
+        .eq('desired_item', itemId);
+      if (error) console.error("Remove wishlist error:", error);
+    } else {
+      const { error } = await supabase.from('wishlists').insert({ 
+        user_id: session.user.id, 
+        desired_item: itemId 
+      });
+      if (error) console.error("Add wishlist error:", error);
+    }
   }
 
   let tabContent = null
-
   if (!isAuthenticated) {
     tabContent = authStage === 'entry' ? <Entry onGetStarted={openLogin} /> : <Auth />
   } else if (activeTab === 'home') {
-    tabContent = (
-      <Home
-        listings={listings}
-        wishlistIds={wishlistIds}
-        onToggleWishlist={handleToggleWishlist}
-        onItemSelect={openChatFromItem}
-      />
-    )
+    tabContent = <Home wishlistIds={wishlistIds} onToggleWishlist={handleToggleWishlist} onItemSelect={openChatFromItem} />
   } else if (activeTab === 'add') {
-    tabContent = <AddItem session={session} />
+    tabContent = <AddItem />
   } else if (activeTab === 'chat') {
-    tabContent = (
-      <ChatRoom
-        initialMessages={initialMessages}
-        chatPartner={chatPartner}
-        chatContextItem={selectedChatItem}
-        onBack={() => handleTabChange('home')}
-        session={session}
-      />
-    )
+    tabContent = <ChatRoom chatContextItem={selectedChatItem} onBack={() => handleTabChange('home')} session={session} />
   } else if (activeTab === 'profile') {
-    tabContent = (
-      <Profile
-        profile={profile}
-        impactStats={impactStats}
-        listings={listings}
-        wishlistIds={wishlistIds}
-        onToggleWishlist={handleToggleWishlist}
-        session={session}
-      />
-    )
-  }
-
-  if (!isAuthReady) {
-    return (
-      <div className="min-h-screen bg-[#edf2ed]">
-        <div className="max-w-md mx-auto h-[100dvh] bg-[#f4f7f4] flex items-center justify-center text-sm text-gray-500">
-          Checking session...
-        </div>
-      </div>
-    )
+    tabContent = <Profile wishlistIds={wishlistIds} onToggleWishlist={handleToggleWishlist} session={session} />
   }
 
   return (

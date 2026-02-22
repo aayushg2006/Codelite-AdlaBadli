@@ -5,7 +5,7 @@ import { formatPriceINR } from '../lib/helpers'
 import ChatBubble from '../components/ui/ChatBubble'
 import { supabase } from '../lib/supabaseClient' 
 
-function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
+function ChatRoom({ session, chatContextItem, onBack }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [activeChatId, setActiveChatId] = useState(null)
@@ -14,34 +14,69 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
   const [isContactMenuOpen, setIsContactMenuOpen] = useState(false)
   const [isSwapModalOpen, setIsSwapModalOpen] = useState(false)
   
-  // Real Swap States
   const [myAvailableListings, setMyAvailableListings] = useState([]);
   const [selectedOfferId, setSelectedOfferId] = useState('');
+
+  // The state to hold the specific seller's info
+  const [sellerInfo, setSellerInfo] = useState({ name: 'Loading...', initials: '-', status: 'Connecting...' });
 
   const scrollRef = useRef(null)
   const contactMenuRef = useRef(null)
 
-  // 1. INITIALIZE CHAT
+  // 1. FETCH SELLER DETAILS
   useEffect(() => {
-    if (!session?.user) return;
+    if (chatContextItem?.user_id) {
+      supabase.from('users').select('username, avatar_url').eq('id', chatContextItem.user_id).maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setSellerInfo({
+              name: data.username || 'Local User',
+              initials: (data.username || 'U').substring(0, 2).toUpperCase(),
+              status: 'Online'
+            })
+          } else {
+            setSellerInfo({ name: 'Local User', initials: 'U', status: 'Online' })
+          }
+        })
+    }
+  }, [chatContextItem])
+
+  // 2. INITIALIZE CHAT IN DB
+  useEffect(() => {
+    if (!session?.user || !chatContextItem) return;
 
     const initializeChat = async () => {
-      const safeListingId = chatContextItem?.id || "00000000-0000-0000-0000-000000000001";
-      const sellerId = chatContextItem?.seller_id || session.user.id;
+      const safeListingId = chatContextItem.id;
+      const sellerId = chatContextItem.user_id; 
       
-      let { data: chat, error: fetchError } = await supabase
+      if (sellerId === session.user.id) {
+        setActiveView('seller');
+        setSellerInfo({ name: 'Your Item', initials: 'ME', status: 'Seller View' })
+        return; 
+      }
+
+      // maybeSingle prevents app crashes if 0 rows exist
+      let { data: chat } = await supabase
         .from('chats')
         .select('*')
         .eq('listing_id', safeListingId)
         .eq('buyer_id', session.user.id)
-        .single()
+        .maybeSingle()
 
       if (!chat) {
-        const { data: newChat } = await supabase
+        // Just in case the seller skipped auth sync, silently insert a dummy user row so FK constraints don't break
+        await supabase.from('users').upsert({ id: sellerId, username: 'Local User' }, { onConflict: 'id', ignoreDuplicates: true });
+
+        const { data: newChat, error: insertError } = await supabase
           .from('chats')
           .insert({ listing_id: safeListingId, buyer_id: session.user.id, seller_id: sellerId })
           .select()
           .single()
+          
+        if (insertError) {
+          console.error("Failed to create chat:", insertError);
+          return;
+        }
         chat = newChat;
       }
 
@@ -67,7 +102,7 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
     initializeChat()
   }, [session, chatContextItem])
 
-  // 2. FETCH USER LISTINGS FOR SWAP
+  // 3. LOAD LISTINGS FOR SWAPS
   useEffect(() => {
     if (isSwapModalOpen && session?.user) {
       supabase.from('listings')
@@ -83,7 +118,7 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
     }
   }, [isSwapModalOpen, session]);
 
-  // 3. SUBSCRIBE TO REAL-TIME MESSAGES
+  // 4. SUBSCRIBE TO INSTANT MESSAGES
   useEffect(() => {
     if (!activeChatId) return
 
@@ -112,7 +147,7 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
     if (scrollRef.current) scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
-  // 4. SEND MESSAGE
+  // 5. SEND MESSAGE
   const sendMessage = async () => {
     const text = draft.trim()
     if (!text || !session?.user || !activeChatId) return;
@@ -123,14 +158,18 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
     setMessages(current => [...current, { id: tempId, sender: 'me', text, time }])
     setDraft('')
 
-    await supabase.from('messages').insert({
+    const { error } = await supabase.from('messages').insert({
         chat_id: activeChatId,
         sender_id: session.user.id,
         content: text
     })
+    
+    if (error) {
+        console.error("Message failed to send:", error);
+        alert("Failed to send message. Please check database permissions.");
+    }
   }
 
-  // 5. PROPOSE SWAP ACTION
   const handleProposeSwapSubmit = async () => {
     try {
       const res = await fetch('http://localhost:3000/api/swaps/propose', {
@@ -140,7 +179,7 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
           'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          desired_listing_id: chatContextItem.id || '00000000-0000-0000-0000-000000000001',
+          desired_listing_id: chatContextItem.id,
           offered_listing_id: selectedOfferId
         })
       });
@@ -157,13 +196,22 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
     }
   };
 
+  if (!chatContextItem) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+        <p className="text-gray-500 mb-4">No item selected.</p>
+        <button onClick={onBack} className="bg-[var(--deep-olive)] text-white px-4 py-2 rounded-lg">Go Back</button>
+      </div>
+    );
+  }
+
   return (
     <section className="flex h-full flex-col bg-white">
       <FlatHeader
         onBack={onBack}
-        name={chatPartner?.name || 'Local User'}
-        status={chatPartner?.status || 'Online'}
-        initials={chatPartner?.initials || 'U'}
+        name={sellerInfo.name}
+        status={sellerInfo.status}
+        initials={sellerInfo.initials}
         rightSlot={
           <div ref={contactMenuRef} className="relative">
             <button type="button" onClick={() => setIsContactMenuOpen(c => !c)} className="rounded-full p-2 text-gray-500 hover:bg-gray-100">
@@ -185,7 +233,9 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
           <div className="mx-4 mt-3 rounded-2xl border border-[#d7e4d3] bg-white p-3 shadow-sm">
             <p className="text-[10px] uppercase tracking-wider text-gray-500">Context</p>
             <div className="mt-2 flex items-center gap-3">
-              <div className="h-14 w-14 rounded-xl bg-gray-200" />
+              <div className="h-14 w-14 rounded-xl bg-gray-200 overflow-hidden">
+                <img src={chatContextItem?.ai_metadata?.imageUrl || chatContextItem?.image_url} className="w-full h-full object-cover" />
+              </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-gray-800">{chatContextItem?.title || 'Unknown Item'}</p>
                 <p className="text-xs text-gray-500">{formatPriceINR(chatContextItem?.price || 0)}</p>
@@ -197,6 +247,7 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-4 pb-3 pt-3">
+            {messages.length === 0 && <div className="text-center text-xs text-gray-400 mt-4">Start the conversation!</div>}
             {messages.map((message) => <ChatBubble key={message.id} message={message} />)}
           </div>
 
@@ -210,7 +261,9 @@ function ChatRoom({ session, chatPartner, chatContextItem, onBack }) {
           </div>
         </>
       ) : (
-        <div className="flex flex-1 items-center justify-center"><p className="text-sm text-gray-500">Seller POV Active</p></div>
+        <div className="flex flex-1 items-center justify-center p-6 text-center">
+          <p className="text-sm text-gray-500">Seller POV is active. You are viewing this as the owner.</p>
+        </div>
       )}
 
       {isSwapModalOpen && (
