@@ -6,6 +6,7 @@ import StatCard from '../components/ui/StatCard'
 import { formatPriceINR } from '../lib/helpers'
 
 const RATE_EVENT_PREFIX = '__RATE_EVENT__'
+const DEAL_EVENT_PREFIX = '__DEAL_EVENT__'
 
 const parseRateEventContent = (content) => {
   if (typeof content !== 'string' || !content.startsWith(RATE_EVENT_PREFIX)) {
@@ -14,6 +15,18 @@ const parseRateEventContent = (content) => {
 
   try {
     return JSON.parse(content.slice(RATE_EVENT_PREFIX.length))
+  } catch {
+    return null
+  }
+}
+
+const parseDealEventContent = (content) => {
+  if (typeof content !== 'string' || !content.startsWith(DEAL_EVENT_PREFIX)) {
+    return null
+  }
+
+  try {
+    return JSON.parse(content.slice(DEAL_EVENT_PREFIX.length))
   } catch {
     return null
   }
@@ -44,7 +57,11 @@ function Profile({ wishlistIds = [], onToggleWishlist, session }) {
         .eq('user_id', activeUser.id)
 
       const ownListings = listingsData || []
-      setMyListings(ownListings)
+      const activeListings = ownListings.filter((item) => {
+        const status = String(item.status || '').toLowerCase()
+        return status !== 'sold' && status !== 'swapped'
+      })
+      setMyListings(activeListings)
 
       // Resolve wishlisted listing IDs into full listing records for ItemCard.
       if (wishlistIds.length > 0) {
@@ -83,17 +100,16 @@ function Profile({ wishlistIds = [], onToggleWishlist, session }) {
         counterpartIds.length
           ? supabase.from('users').select('id, username').in('id', counterpartIds)
           : Promise.resolve({ data: [], error: null }),
-        matches.length
-          ? supabase
-              .from('chats')
-              .select('id, buyer_id, seller_id, listing_id')
-              .in('listing_id', [...new Set(matches.map((row) => row.listing_2_id).filter(Boolean))])
-          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from('chats')
+          .select('id, buyer_id, seller_id, listing_id')
+          .or(`buyer_id.eq.${activeUser.id},seller_id.eq.${activeUser.id}`),
       ])
 
       const listingMap = new Map((matchListingsRes.data || []).map((row) => [row.id, row]))
       const counterpartMap = new Map((counterpartRes.data || []).map((row) => [row.id, row.username || 'Local User']))
       const chats = chatsRes.data || []
+      const chatById = new Map(chats.map((chat) => [chat.id, chat]))
       const chatByCompositeKey = new Map(
         chats.map((chat) => [`${chat.buyer_id}:${chat.seller_id}:${chat.listing_id}`, chat])
       )
@@ -118,13 +134,25 @@ function Profile({ wishlistIds = [], onToggleWishlist, session }) {
       chats.forEach((chat) => {
         const rows = messagesByChat.get(chat.id) || []
         const confirmationsByAmount = new Map()
+        let latestAcceptedRate = null
+        let latestAcceptedAt = null
 
         rows
           .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
           .forEach((message) => {
             const event = parseRateEventContent(message.content)
             const amount = Number(event?.amount)
-            if (!event || !Number.isFinite(amount) || amount <= 0 || !event.actorId) {
+            if (!event) {
+              return
+            }
+
+            if (event.kind === 'rate_accepted' && Number.isFinite(amount) && amount > 0) {
+              latestAcceptedRate = Math.round(amount)
+              latestAcceptedAt = message.created_at
+              return
+            }
+
+            if (event.kind !== 'rate_confirmed' || !Number.isFinite(amount) || amount <= 0 || !event.actorId) {
               return
             }
 
@@ -141,7 +169,9 @@ function Profile({ wishlistIds = [], onToggleWishlist, session }) {
           .filter((entry) => entry.actors.has(chat.buyer_id) && entry.actors.has(chat.seller_id))
           .sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime())[0]
 
-        if (agreed) {
+        if (latestAcceptedRate && latestAcceptedAt) {
+          finalRateByChat.set(chat.id, latestAcceptedRate)
+        } else if (agreed) {
           finalRateByChat.set(chat.id, agreed.amount)
         }
       })
@@ -169,6 +199,62 @@ function Profile({ wishlistIds = [], onToggleWishlist, session }) {
         }
       })
 
+      const dealHistory = (chatMessages || [])
+        .map((message) => {
+          const deal = parseDealEventContent(message.content)
+          if (!deal || deal.kind !== 'sold') {
+            return null
+          }
+
+          const chat = chatById.get(message.chat_id)
+          if (!chat) {
+            return null
+          }
+
+          const sellerId = deal.sellerId || chat.seller_id
+          const buyerId = deal.buyerId || chat.buyer_id
+          const amount = Number(deal.amount)
+          const normalizedAmount = Number.isFinite(amount) && amount > 0 ? Math.round(amount) : null
+          const listingTitle = deal.listingTitle || listingMap.get(chat.listing_id)?.title || 'Item'
+
+          if (sellerId === activeUser.id) {
+            return {
+              id: `deal-sell-${message.chat_id}-${message.created_at}`,
+              type: 'SELL',
+              status: 'COMPLETED',
+              title: listingTitle,
+              counterpart: deal.buyerName || counterpartMap.get(buyerId) || 'Buyer',
+              youGave: listingTitle,
+              youReceived: 'Cash',
+              finalRate: normalizedAmount,
+              createdAt: message.created_at,
+            }
+          }
+
+          if (buyerId === activeUser.id) {
+            return {
+              id: `deal-buy-${message.chat_id}-${message.created_at}`,
+              type: 'BUY',
+              status: 'COMPLETED',
+              title: listingTitle,
+              counterpart: deal.sellerName || counterpartMap.get(sellerId) || 'Seller',
+              youGave: 'Cash',
+              youReceived: listingTitle,
+              finalRate: normalizedAmount,
+              createdAt: message.created_at,
+            }
+          }
+
+          return null
+        })
+        .filter(Boolean)
+
+      const completedDealKeys = new Set(
+        dealHistory
+          .filter((row) => row.type === 'SELL')
+          .map((row) => `${row.title}|${row.finalRate || ''}`)
+      )
+
       const soldHistory = ownListings
         .filter((item) => String(item.status || '').toLowerCase() === 'sold')
         .map((item) => ({
@@ -182,9 +268,12 @@ function Profile({ wishlistIds = [], onToggleWishlist, session }) {
           finalRate: Number(item.ai_metadata?.finalRate || item.price || 0),
           createdAt: item.updated_at || item.created_at,
         }))
+        .filter((row) => !completedDealKeys.has(`${row.title}|${row.finalRate || ''}`))
 
       setHistoryRows(
-        [...swapHistory, ...soldHistory].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+        [...swapHistory, ...dealHistory, ...soldHistory].sort(
+          (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+        )
       )
       
       setLoading(false)

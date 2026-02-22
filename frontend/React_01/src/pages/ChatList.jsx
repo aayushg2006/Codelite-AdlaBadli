@@ -33,6 +33,14 @@ const formatPreviewMessage = (content) => {
 
   if (!content.startsWith(SWAP_EVENT_PREFIX)) {
     if (content.startsWith(RATE_EVENT_PREFIX)) {
+      try {
+        const payload = JSON.parse(content.slice(RATE_EVENT_PREFIX.length))
+        if (payload?.kind === 'rate_proposed') return 'Rate proposed'
+        if (payload?.kind === 'rate_accepted') return 'Rate accepted'
+        if (payload?.kind === 'rate_rejected') return 'Rate rejected'
+      } catch {
+        return 'Final rate update'
+      }
       return 'Final rate confirmed'
     }
     if (content.startsWith(DEAL_EVENT_PREFIX)) {

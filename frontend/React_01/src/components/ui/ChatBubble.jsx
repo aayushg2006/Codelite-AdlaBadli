@@ -1,3 +1,5 @@
+import { formatPriceINR } from '../../lib/helpers'
+
 function ChatBubble({ message }) {
   const isSender = message.sender === 'me'
   const swapEvent = message.swapEvent || null
@@ -30,12 +32,41 @@ function ChatBubble({ message }) {
   }
 
   if (rateEvent) {
+    const rateKind = rateEvent.kind || 'rate_confirmed'
+    const rateAmount = Number(rateEvent.amount)
+    const amountLabel = Number.isFinite(rateAmount) && rateAmount > 0 ? formatPriceINR(rateAmount) : 'a final rate'
+
+    const tone =
+      rateKind === 'rate_proposed'
+        ? 'border-[#d8e5d4] bg-[#f5faf3] text-[var(--deep-olive)]'
+        : rateKind === 'rate_rejected'
+        ? 'border-red-200 bg-red-50 text-red-700'
+        : 'border-green-200 bg-green-50 text-green-800'
+
+    const heading =
+      rateKind === 'rate_proposed'
+        ? 'Rate Proposed'
+        : rateKind === 'rate_rejected'
+        ? 'Rate Rejected'
+        : rateKind === 'rate_accepted'
+        ? 'Rate Accepted'
+        : 'Final Rate Confirmed'
+
+    const action =
+      rateKind === 'rate_proposed'
+        ? 'proposed'
+        : rateKind === 'rate_rejected'
+        ? 'rejected'
+        : rateKind === 'rate_accepted'
+        ? 'accepted'
+        : 'confirmed'
+
     return (
       <div className="animate-message-in flex justify-center">
-        <article className="w-full max-w-[92%] rounded-2xl border border-[#d8e5d4] bg-[#f5faf3] px-3.5 py-3 shadow-sm text-[var(--deep-olive)]">
-          <p className="text-[10px] font-semibold uppercase tracking-wider">Final Rate Confirmed</p>
+        <article className={`w-full max-w-[92%] rounded-2xl border px-3.5 py-3 shadow-sm ${tone}`}>
+          <p className="text-[10px] font-semibold uppercase tracking-wider">{heading}</p>
           <p className="mt-1 text-xs leading-relaxed">
-            {rateEvent.actorName || 'User'} confirmed <span className="font-semibold">₹{Number(rateEvent.amount || 0).toLocaleString('en-IN')}</span>.
+            {rateEvent.actorName || 'User'} {action} <span className="font-semibold">{amountLabel}</span>.
           </p>
           <p className="mt-2 text-[10px] opacity-70">{message.time}</p>
         </article>
@@ -50,7 +81,7 @@ function ChatBubble({ message }) {
           <p className="text-[10px] font-semibold uppercase tracking-wider">Deal Closed</p>
           <p className="mt-1 text-xs leading-relaxed">
             {dealEvent.actorName || 'User'} marked <span className="font-semibold">{dealEvent.listingTitle || 'item'}</span> as sold for{' '}
-            <span className="font-semibold">₹{Number(dealEvent.amount || 0).toLocaleString('en-IN')}</span>.
+            <span className="font-semibold">{formatPriceINR(Number(dealEvent.amount || 0))}</span>.
           </p>
           <p className="mt-2 text-[10px] opacity-70">{message.time}</p>
         </article>

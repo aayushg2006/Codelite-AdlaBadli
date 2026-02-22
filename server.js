@@ -15,6 +15,28 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const SMART_MATCH_RADIUS_METERS = 5000;
 const SMART_MATCH_MAX_RESULTS = 20;
+const RATE_EVENT_PREFIX = '__RATE_EVENT__';
+const DEAL_EVENT_PREFIX = '__DEAL_EVENT__';
+
+function createRateEventContent(payload) {
+  return `${RATE_EVENT_PREFIX}${JSON.stringify(payload)}`;
+}
+
+function createDealEventContent(payload) {
+  return `${DEAL_EVENT_PREFIX}${JSON.stringify(payload)}`;
+}
+
+function parseRateEventContent(content) {
+  if (typeof content !== 'string' || !content.startsWith(RATE_EVENT_PREFIX)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(content.slice(RATE_EVENT_PREFIX.length));
+  } catch {
+    return null;
+  }
+}
 
 function normalizeDistanceKm(row) {
   const raw = row?.distanceKm ?? row?.distance_km ?? row?.distance ?? 0;
@@ -376,6 +398,179 @@ app.put('/api/swaps/:id/respond', requireAuth, async (req, res) => {
   }
 
   return res.json(updatedMatch);
+});
+
+app.put('/api/chats/:id/rate/respond', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { response, proposal_id } = req.body || {};
+  const user_id = req.user.id;
+
+  if (!['accept', 'reject'].includes(response)) {
+    return res.status(400).json({ error: "Response must be 'accept' or 'reject'" });
+  }
+
+  if (!proposal_id) {
+    return res.status(400).json({ error: 'proposal_id is required' });
+  }
+
+  const { data: chat, error: chatError } = await supabase
+    .from('chats')
+    .select('id, buyer_id, seller_id, listing_id')
+    .eq('id', id)
+    .single();
+
+  if (chatError || !chat) {
+    return res.status(404).json({ error: 'Chat not found' });
+  }
+
+  if (chat.buyer_id !== user_id && chat.seller_id !== user_id) {
+    return res.status(403).json({ error: 'Not authorized for this chat' });
+  }
+
+  const { data: messageRows, error: messageError } = await supabase
+    .from('messages')
+    .select('content, created_at')
+    .eq('chat_id', chat.id)
+    .order('created_at', { ascending: false })
+    .limit(400);
+
+  if (messageError) {
+    return res.status(500).json({ error: messageError.message });
+  }
+
+  const matchingProposalRow = (messageRows || []).find((row) => {
+    const event = parseRateEventContent(row.content);
+    return event?.kind === 'rate_proposed' && event?.proposalId === proposal_id;
+  });
+
+  if (!matchingProposalRow) {
+    return res.status(404).json({ error: 'Rate proposal not found' });
+  }
+
+  const proposalEvent = parseRateEventContent(matchingProposalRow.content);
+  const proposedAmount = Number(proposalEvent?.amount);
+
+  if (!proposalEvent?.actorId || !Number.isFinite(proposedAmount) || proposedAmount <= 0) {
+    return res.status(400).json({ error: 'Invalid rate proposal payload' });
+  }
+
+  if (proposalEvent.actorId === user_id) {
+    return res.status(400).json({ error: 'You cannot respond to your own proposal' });
+  }
+
+  const isAlreadyResolved = (messageRows || []).some((row) => {
+    const event = parseRateEventContent(row.content);
+    if (!event || event.proposalId !== proposal_id) {
+      return false;
+    }
+    return event.kind === 'rate_accepted' || event.kind === 'rate_rejected';
+  });
+
+  if (isAlreadyResolved) {
+    return res.status(409).json({ error: 'This rate proposal has already been resolved' });
+  }
+
+  const roundedAmount = Math.round(proposedAmount);
+  const { data: actorRow } = await supabase.from('users').select('id, username').eq('id', user_id).maybeSingle();
+  const actorName = actorRow?.username || req.user?.email || 'User';
+
+  const rateResponsePayload = {
+    kind: response === 'accept' ? 'rate_accepted' : 'rate_rejected',
+    proposalId: proposal_id,
+    actorId: user_id,
+    actorName,
+    amount: roundedAmount,
+  };
+
+  const { error: rateResponseError } = await supabase.from('messages').insert({
+    chat_id: chat.id,
+    sender_id: user_id,
+    content: createRateEventContent(rateResponsePayload),
+  });
+
+  if (rateResponseError) {
+    return res.status(500).json({ error: rateResponseError.message });
+  }
+
+  if (response === 'reject') {
+    return res.json({ status: 'rejected', amount: roundedAmount });
+  }
+
+  const participantIds = [...new Set([chat.buyer_id, chat.seller_id].filter(Boolean))];
+  const { data: participantRows, error: participantError } = participantIds.length
+    ? await supabase.from('users').select('id, username').in('id', participantIds)
+    : { data: [], error: null };
+
+  if (participantError) {
+    return res.status(500).json({ error: participantError.message });
+  }
+
+  const usernamesById = new Map((participantRows || []).map((row) => [row.id, row.username || 'Local User']));
+  const sellerName = usernamesById.get(chat.seller_id) || 'Seller';
+  const buyerName = usernamesById.get(chat.buyer_id) || 'Buyer';
+
+  let listingTitle = 'Item';
+  let listingRemoved = false;
+
+  if (chat.listing_id) {
+    const { data: listing, error: listingFetchError } = await supabase
+      .from('listings')
+      .select('id, title, ai_metadata')
+      .eq('id', chat.listing_id)
+      .maybeSingle();
+
+    if (listingFetchError) {
+      return res.status(500).json({ error: listingFetchError.message });
+    }
+
+    if (listing) {
+      listingTitle = listing.title || 'Item';
+      const { error: listingDeleteError } = await supabase.from('listings').delete().eq('id', listing.id);
+
+      if (listingDeleteError) {
+        const nextMetadata = {
+          ...(listing.ai_metadata || {}),
+          finalRate: roundedAmount,
+        };
+        const { error: listingUpdateError } = await supabase
+          .from('listings')
+          .update({ status: 'sold', ai_metadata: nextMetadata })
+          .eq('id', listing.id);
+
+        if (listingUpdateError) {
+          return res.status(500).json({ error: listingUpdateError.message });
+        }
+      } else {
+        listingRemoved = true;
+      }
+    }
+  }
+
+  const dealPayload = {
+    kind: 'sold',
+    actorId: chat.seller_id,
+    actorName: sellerName,
+    amount: roundedAmount,
+    listingId: chat.listing_id || proposalEvent.listingId || null,
+    listingTitle,
+    sellerId: chat.seller_id,
+    sellerName,
+    buyerId: chat.buyer_id,
+    buyerName,
+    listingRemoved,
+  };
+
+  const { error: dealMessageError } = await supabase.from('messages').insert({
+    chat_id: chat.id,
+    sender_id: user_id,
+    content: createDealEventContent(dealPayload),
+  });
+
+  if (dealMessageError) {
+    return res.status(500).json({ error: dealMessageError.message });
+  }
+
+  return res.json({ status: 'accepted', amount: roundedAmount, listing_removed: listingRemoved });
 });
 
 app.put('/api/listings/:id/mark-sold', requireAuth, async (req, res) => {
