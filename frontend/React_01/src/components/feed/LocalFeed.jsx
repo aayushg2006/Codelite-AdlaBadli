@@ -75,17 +75,10 @@ function LocalFeed({
       </Header>
 
       <div onScroll={handleFeedScroll} className="flex-1 overflow-y-auto px-4 pb-5 pt-4">
-        <article className="mb-4 rounded-2xl border border-[#dce7d8] bg-white p-3 shadow-sm">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500">Neighborhood Pulse</p>
-          <div className="mt-2 flex items-center justify-between">
-            <p className="max-w-[70%] text-sm text-gray-700">
-              Your circle diverted <span className="font-semibold text-[var(--deep-olive)]">132kg waste</span> this week.
-            </p>
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-[#ebf3e8] text-[var(--deep-olive)]">
-              <Compass size={16} />
-            </div>
-          </div>
-        </article>
+        
+            
+          
+      
 
         {filteredListings.length ? (
           <div className="grid grid-cols-2 gap-3">
