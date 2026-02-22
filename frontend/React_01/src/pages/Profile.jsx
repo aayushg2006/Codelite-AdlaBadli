@@ -4,42 +4,49 @@ import { supabase } from '../lib/supabaseClient'
 import ItemCard from '../components/ui/ItemCard'
 import StatCard from '../components/ui/StatCard'
 
-function Profile() {
+function Profile({ wishlistIds = [], onToggleWishlist, session }) {
   const [activeCollection, setActiveCollection] = useState('listings')
   const [myListings, setMyListings] = useState([])
   const [myWishlist, setMyWishlist] = useState([])
-  const [user, setUser] = useState(null)
+  const [user, setUser] = useState(session?.user ?? null)
   const [loading, setLoading] = useState(true)
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   useEffect(() => {
     const fetchProfileData = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return;
-      
-      setUser(session.user)
+      const activeUser = session?.user
+      if (!activeUser) {
+        setLoading(false)
+        return
+      }
+
+      setUser(activeUser)
 
       // Fetch user's listings
       const { data: listingsData } = await supabase
         .from('listings')
         .select('*')
-        .eq('user_id', session.user.id)
+        .eq('user_id', activeUser.id)
       
       if (listingsData) setMyListings(listingsData)
 
-      // Fetch user's wishlist items
-      const { data: wishlistData } = await supabase
-        .from('wishlists')
-        .select('desired_item') // Note: Depending on how you joined wishlist and listings
-        .eq('user_id', session.user.id)
-      
-      if (wishlistData) setMyWishlist(wishlistData)
+      // Resolve wishlisted listing IDs into full listing records for ItemCard.
+      if (wishlistIds.length > 0) {
+        const { data: wishlistListings } = await supabase
+          .from('listings')
+          .select('*')
+          .in('id', wishlistIds)
+
+        if (wishlistListings) setMyWishlist(wishlistListings)
+      } else {
+        setMyWishlist([])
+      }
       
       setLoading(false)
     }
 
     fetchProfileData()
-  }, [])
+  }, [session, wishlistIds])
 
   const handleLogout = async () => {
     if (!supabase) {
@@ -100,7 +107,12 @@ function Profile() {
               <p className="col-span-2 text-center text-xs text-gray-400 py-6">No items here yet.</p>
             ) : (
               visibleItems.map((item) => (
-                <ItemCard key={item.id} item={item} />
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  isFavorite={wishlistIds.includes(item.id)}
+                  onFavoriteToggle={onToggleWishlist}
+                />
               ))
             )}
           </div>
