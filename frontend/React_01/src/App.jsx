@@ -23,32 +23,62 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [session, setSession] = useState(null)
   const [authStage, setAuthStage] = useState('entry')
+  const [isAuthReady, setIsAuthReady] = useState(false)
   const [selectedChatItem, setSelectedChatItem] = useState(chatContextItem)
   const [wishlistIds, setWishlistIds] = useState(() => profile?.wishlistIds ? [...profile.wishlistIds] : [])
-  const [screenKey, setScreenKey] = useState(0)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session) {
-        setIsAuthenticated(true)
-        setActiveTab('home')
-      }
-    })
+    let isMounted = true
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const initializeAuth = async () => {
+      if (!supabase) {
+        if (isMounted) {
+          setIsAuthenticated(false)
+          setAuthStage('login')
+          setIsAuthReady(true)
+        }
+        return
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!isMounted) {
+        return
+      }
+
       setSession(session)
       if (session) {
         setIsAuthenticated(true)
         setActiveTab('home')
-        setScreenKey((current) => current + 1)
       } else {
         setIsAuthenticated(false)
-        setAuthStage('entry')
+      }
+      setIsAuthReady(true)
+    }
+
+    initializeAuth()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession)
+
+      if (nextSession) {
+        setIsAuthenticated(true)
+        setActiveTab('home')
+        return
+      }
+
+      setIsAuthenticated(false)
+
+      // Keep users on login after logout/OAuth callback misses instead of forcing Entry loop.
+      if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
+        setAuthStage('login')
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const handleTabChange = (tab) => {
@@ -57,7 +87,6 @@ function App() {
 
   const openLogin = () => {
     setAuthStage('login')
-    setScreenKey((current) => current + 1)
   }
 
   const openChatFromItem = (item) => {
@@ -106,6 +135,16 @@ function App() {
         onToggleWishlist={handleToggleWishlist}
         session={session}
       />
+    )
+  }
+
+  if (!isAuthReady) {
+    return (
+      <div className="min-h-screen bg-[#edf2ed]">
+        <div className="max-w-md mx-auto h-[100dvh] bg-[#f4f7f4] flex items-center justify-center text-sm text-gray-500">
+          Checking session...
+        </div>
+      </div>
     )
   }
 

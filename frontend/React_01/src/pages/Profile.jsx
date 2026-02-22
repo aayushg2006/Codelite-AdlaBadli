@@ -1,7 +1,6 @@
-import { Leaf, Recycle, Trees } from 'lucide-react'
+import { Leaf, LogOut, Recycle, Trees } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
-import ProfileHeader from '../components/profile/ProfileHeader'
 import ItemCard from '../components/ui/ItemCard'
 import StatCard from '../components/ui/StatCard'
 
@@ -11,6 +10,7 @@ function Profile() {
   const [myWishlist, setMyWishlist] = useState([])
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [isSigningOut, setIsSigningOut] = useState(false)
 
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -41,6 +41,20 @@ function Profile() {
     fetchProfileData()
   }, [])
 
+  const handleLogout = async () => {
+    if (!supabase) {
+      alert('Supabase client not initialized')
+      return
+    }
+
+    setIsSigningOut(true)
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      alert(`Logout failed: ${error.message}`)
+    }
+    setIsSigningOut(false)
+  }
+
   if (loading) return <div className="p-10 text-center text-gray-500">Loading Profile...</div>
 
   const visibleItems = activeCollection === 'listings' ? myListings : myWishlist
@@ -51,6 +65,15 @@ function Profile() {
         <div className="text-center">
           <h2 className="text-xl font-semibold text-gray-800">{user?.user_metadata?.username || 'GeoSwap User'}</h2>
           <p className="mt-1 text-sm text-gray-500">{user?.email}</p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={isSigningOut}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[#bfd0b8] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--deep-olive)] shadow-sm transition duration-150 hover:bg-[#edf4ea] active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <LogOut size={13} />
+            {isSigningOut ? 'Logging out...' : 'Logout'}
+          </button>
         </div>
 
         <section className="mt-4 rounded-2xl bg-gradient-to-br from-[var(--earth-olive)] to-[var(--deep-olive)] p-4 shadow-sm">
