@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import LocalFeed from '../components/feed/LocalFeed'
 import { supabase } from '../lib/supabaseClient'
 
-const API_BASE_URL = 'http://localhost:3000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 const SMART_MATCH_REFRESH_MS = 30000
 
 function Home({ session, onItemSelect, wishlistIds, onToggleWishlist }) {
@@ -49,9 +49,9 @@ function Home({ session, onItemSelect, wishlistIds, onToggleWishlist }) {
 
     const fetchFeedAndMatches = async () => {
       try {
-        const feedPromise = fetch(`${API_BASE_URL}/items/nearby?lat=${location.lat}&lon=${location.lon}`)
+        const feedPromise = fetch(`${API_BASE_URL}/api/items/nearby?lat=${location.lat}&lon=${location.lon}`)
         const smartMatchPromise = userId
-          ? fetch(`${API_BASE_URL}/swaps/smart-matches?user_id=${userId}&lat=${location.lat}&lon=${location.lon}`)
+          ? fetch(`${API_BASE_URL}/api/swaps/smart-matches?user_id=${userId}&lat=${location.lat}&lon=${location.lon}`)
           : Promise.resolve(null)
 
         const [feedRes, smartMatchRes] = await Promise.all([feedPromise, smartMatchPromise])

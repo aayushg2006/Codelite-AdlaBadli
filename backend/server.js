@@ -7,7 +7,37 @@ const { requireAuth } = require('./middleware/auth');
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow server-to-server and non-browser requests (no Origin header).
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      // If no allowlist is provided, allow all origins.
+      if (!allowedOrigins.length) {
+        callback(null, true);
+        return;
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+  })
+);
 
 // Initialize Supabase & Gemini
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);

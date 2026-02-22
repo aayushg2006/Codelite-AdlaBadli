@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabaseClient'
 const SWAP_EVENT_PREFIX = '__SWAP_EVENT__'
 const RATE_EVENT_PREFIX = '__RATE_EVENT__'
 const DEAL_EVENT_PREFIX = '__DEAL_EVENT__'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 
 const formatMessageTime = (timestamp) =>
   new Intl.DateTimeFormat('en-US', {
@@ -564,7 +565,7 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
     }
 
     try {
-      const res = await fetch('http://localhost:3000/api/swaps/propose', {
+      const res = await fetch(`${API_BASE_URL}/api/swaps/propose`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -652,7 +653,7 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
     setRespondingRateProposalId(pendingProposal.proposalId)
 
     try {
-      const res = await fetch(`http://localhost:3000/api/chats/${chatRecord.id}/rate/respond`, {
+      const res = await fetch(`${API_BASE_URL}/api/chats/${chatRecord.id}/rate/respond`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -685,7 +686,7 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
     setRespondingRequestId(requestId)
 
     try {
-      const res = await fetch(`http://localhost:3000/api/swaps/${requestId}/respond`, {
+      const res = await fetch(`${API_BASE_URL}/api/swaps/${requestId}/respond`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

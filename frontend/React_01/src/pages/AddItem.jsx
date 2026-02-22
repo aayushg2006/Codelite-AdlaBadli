@@ -17,7 +17,7 @@ function AddItem() {
   const streamRef = useRef(null);
 
   // Directly call your local Express backend
-  const API_BASE_URL = 'http://localhost:3000/api';
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const handleImageSelect = (e) => {
     const selected = e.target.files[0];
@@ -167,7 +167,7 @@ function AddItem() {
 
       setStatus('AI is analyzing your item...');
 
-      const response = await fetch(`${API_BASE_URL}/scan`, {
+      const response = await fetch(`${API_BASE_URL}/api/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageUrl: uploadedImageUrl })
@@ -223,7 +223,7 @@ function AddItem() {
       const { latitude, longitude } = position.coords;
       const { data: { session } } = await supabase.auth.getSession();
       
-      const res = await fetch(`${API_BASE_URL}/listings/ai-webhook`, {
+      const res = await fetch(`${API_BASE_URL}/api/listings/ai-webhook`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
