@@ -9,8 +9,8 @@ function AddItem() {
   const [status, setStatus] = useState('');
   const [aiData, setAiData] = useState(null);
 
-  // PUT YOUR N8N WEBHOOK URL HERE
-  const N8N_WEBHOOK_URL = '/n8n-webhook/webhook/740e6f0a-bce8-426e-9a78-0d1dd0c7e3d1';
+  // Directly call your local Express backend
+  const API_BASE_URL = 'http://localhost:3000/api';
 
   const handleImageSelect = (e) => {
     const selected = e.target.files[0];
@@ -30,31 +30,33 @@ function AddItem() {
   const handleScanWithAI = async () => {
     if (!file) return alert("Please select an image first!");
     setIsLoading(true);
-    setStatus('AI is analyzing your item...');
+    setStatus('Uploading image securely...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const fileName = `${session?.user?.id || 'guest'}/${Date.now()}-${file.name}`;
       
-      // Upload to Supabase Storage
       const imageUrl = await uploadImageToBucket(file, 'listings', fileName);
 
-      // Send public URL to n8n to be analyzed
-      const response = await fetch(N8N_WEBHOOK_URL, {
+      setStatus('AI is analyzing your item...');
+
+      const response = await fetch(`${API_BASE_URL}/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageUrl })
       });
 
-      if (!response.ok) throw new Error("AI Scan failed.");
-      
-      const result = await response.json();
-      
-      // Parse Gemini response
-      let parsedData = result;
-      if (result[0]?.content?.parts?.[0]?.text) {
-         parsedData = JSON.parse(result[0].content.parts[0].text.replace(/```json/g, '').replace(/```/g, '').trim());
+      if (!response.ok) {
+        const textResponse = await response.text();
+        try {
+          const errData = JSON.parse(textResponse);
+          throw new Error(errData.error || "AI Scan failed.");
+        } catch (e) {
+          throw new Error(`Server Error (${response.status}): The backend endpoint crashed or doesn't exist.`);
+        }
       }
+      
+      const parsedData = await response.json();
 
       setAiData({ ...parsedData, imageUrl });
       setStatus('');
@@ -69,51 +71,53 @@ function AddItem() {
 
   const handleConfirmListing = async () => {
     setIsLoading(true);
-    setStatus('Publishing to neighborhood...');
+    setStatus('Getting Location & Publishing...');
     
     try {
-      navigator.geolocation.getCurrentPosition(async (position) => {
-        const { latitude, longitude } = position.coords;
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        // Post the confirmed data to Express
-        const res = await fetch('http://localhost:3000/api/listings/ai-webhook', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({
-            itemName: aiData.itemName,
-            category: aiData.category,
-            suggestedPriceINR: aiData.suggestedPriceINR,
-            estimatedWeightKg: aiData.estimatedWeightKg,
-            description: aiData.itemName, // Fallback
-            lat: latitude,
-            lon: longitude,
-            user_id: session.user.id
-          })
-        });
-
-        if (res.ok) {
-          alert("✨ Item officially listed in your 5km radius!");
-          clearSelection();
-        } else {
-          throw new Error("Failed to list item");
-        }
-      }, (err) => {
-        alert("Location access is required!");
-        setIsLoading(false);
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
       });
+
+      const { latitude, longitude } = position.coords;
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const res = await fetch(`${API_BASE_URL}/listings/ai-webhook`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          itemName: aiData.itemName,
+          category: aiData.category,
+          suggestedPriceINR: aiData.suggestedPriceINR,
+          estimatedWeightKg: aiData.estimatedWeightKg,
+          description: aiData.description, 
+          imageUrl: aiData.imageUrl, // FIXED: Sent the image URL back to the server
+          lat: latitude,
+          lon: longitude,
+          user_id: session.user.id
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to list item");
+      }
+
+      alert("✨ Item officially listed in your 5km radius!");
+      clearSelection();
+
     } catch (error) {
-      alert(error.message);
+      console.error(error);
+      alert(error.message === "User denied Geolocation" ? "Location access is required!" : error.message);
+    } finally {
       setIsLoading(false);
     }
   };
 
   return (
     <section className="h-full overflow-y-auto bg-[#f4f7f4] px-4 pb-24 pt-4">
-      {/* Header */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--deep-olive)] to-[var(--earth-olive)] px-5 pb-6 pt-6 text-white shadow-sm">
         <div className="relative">
           <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-white/25 bg-white/12 backdrop-blur-sm">
@@ -153,6 +157,15 @@ function AddItem() {
             <label className="block text-xs font-semibold text-gray-600">Item Name
               <input type="text" value={aiData.itemName || ''} onChange={e => setAiData({...aiData, itemName: e.target.value})} className="mt-1 w-full rounded-lg border p-2 text-sm" />
             </label>
+
+            <label className="block text-xs font-semibold text-gray-600">AI Description
+              <textarea 
+                rows="3" 
+                value={aiData.description || ''} 
+                onChange={e => setAiData({...aiData, description: e.target.value})} 
+                className="mt-1 w-full rounded-lg border p-2 text-sm resize-none" 
+              />
+            </label>
             
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-xs font-semibold text-gray-600">Category
@@ -161,6 +174,11 @@ function AddItem() {
               <label className="block text-xs font-semibold text-gray-600">Price (₹)
                 <input type="number" value={aiData.suggestedPriceINR || 0} onChange={e => setAiData({...aiData, suggestedPriceINR: Number(e.target.value)})} className="mt-1 w-full rounded-lg border p-2 text-sm" />
               </label>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg">
+              <Leaf size={14} className="text-green-600" />
+              <span>Estimated Weight: <b>{aiData.estimatedWeightKg} kg</b> (For Carbon Offset Tracking)</span>
             </div>
 
             <button onClick={handleConfirmListing} disabled={isLoading} className="mt-4 w-full rounded-xl bg-[var(--deep-olive)] py-3 text-sm font-semibold text-white">

@@ -25,19 +25,16 @@ app.post('/api/scan', async (req, res) => {
 
     console.log("Downloading image for AI analysis:", imageUrl);
 
-    // 1. Fetch the image from the public Supabase URL
     const imageResponse = await fetch(imageUrl);
     if (!imageResponse.ok) {
       throw new Error(`Failed to fetch image from Supabase: ${imageResponse.statusText}`);
     }
     
-    // 2. Convert the image to Base64 format for Gemini
     const arrayBuffer = await imageResponse.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const base64Image = buffer.toString('base64');
     const mimeType = imageResponse.headers.get('content-type') || 'image/jpeg';
 
-    // 3. Initialize the Gemini Model
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
@@ -57,18 +54,15 @@ app.post('/api/scan', async (req, res) => {
       }
     };
 
-    // 4. Send to Gemini
     console.log("Sending to Gemini...");
     const result = await model.generateContent([prompt, imagePart]);
     const responseText = result.response.text();
 
-    // 5. Clean up the response to ensure it is valid JSON
     const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
     const parsedData = JSON.parse(cleanJson);
 
     console.log("AI Analysis Complete:", parsedData);
     
-    // 6. Return the data to React
     return res.json(parsedData);
 
   } catch (error) {
@@ -111,7 +105,8 @@ app.get('/api/items/nearby', async (req, res) => {
 // -------------------------------------------------------------------
 app.post('/api/listings/ai-webhook', async (req, res) => {
   const body = req.body;
-  const { itemName, description, category, suggestedPriceINR, estimatedWeightKg, lat, lon, user_id } = body;
+  // FIXED: Destructured imageUrl correctly
+  const { itemName, description, category, suggestedPriceINR, estimatedWeightKg, imageUrl, lat, lon, user_id } = body;
 
   const missing = [];
   if (!itemName) missing.push('itemName');
@@ -135,12 +130,13 @@ app.post('/api/listings/ai-webhook', async (req, res) => {
     ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { global: { headers: { Authorization: authHeader } } })
     : supabase;
 
+  // FIXED: Embedded the imageUrl into ai_metadata so it saves!
   const mappedData = {
     title: itemName,
     description: description ?? itemName,
     category: category,
     price: suggestedPriceINR,
-    ai_metadata: { estimatedWeightKg: weightNum },
+    ai_metadata: { estimatedWeightKg: weightNum, imageUrl: imageUrl }, 
     user_id: user_id,
     user_lat: p_user_lat,
     user_lon: p_user_lon

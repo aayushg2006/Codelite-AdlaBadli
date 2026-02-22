@@ -15,6 +15,9 @@ function ItemCard({ item, onSelect, isFavorite, onFavoriteToggle }) {
     setLocalFavorite((current) => !current)
   }
 
+  // Extract the image from metadata correctly!
+  const itemImage = item.ai_metadata?.imageUrl || item.image_url;
+
   return (
     <article
       role={onSelect ? 'button' : undefined}
@@ -34,9 +37,9 @@ function ItemCard({ item, onSelect, isFavorite, onFavoriteToggle }) {
       }`}
     >
       <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-gray-100">
-        {item.image_url ? (
+        {itemImage ? (
           <img
-            src={item.image_url}
+            src={itemImage}
             alt={item.title ?? ''}
             className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
           />
@@ -70,7 +73,7 @@ function ItemCard({ item, onSelect, isFavorite, onFavoriteToggle }) {
         <div className="mt-2 flex items-center justify-between gap-2">
           <p className="text-xl font-bold tracking-tight text-[var(--deep-olive)]">{formatPriceINR(item.price)}</p>
           <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-medium text-gray-600">
-            {item.distanceKm} km
+            {item.distanceKm || 0} km
           </span>
         </div>
         {item.condition != null && item.condition !== '' && (

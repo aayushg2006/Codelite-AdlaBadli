@@ -53,7 +53,6 @@ function App() {
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
-    setScreenKey((current) => current + 1)
   }
 
   const openLogin = () => {
@@ -114,7 +113,7 @@ function App() {
     <div className="min-h-screen bg-[#edf2ed]">
       <div className="max-w-md mx-auto h-[100dvh] bg-[#f4f7f4] relative overflow-hidden flex flex-col shadow-2xl border-x border-gray-200">
         <main className="relative flex-1 overflow-hidden">
-          <div key={`${isAuthenticated}-${activeTab}-${screenKey}`} className="h-full animate-screen-fade">
+          <div key={`${isAuthenticated}-${activeTab}`} className="h-full animate-screen-fade">
             {tabContent}
           </div>
         </main>

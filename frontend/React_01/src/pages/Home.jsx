@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import LocalFeed from "../components/feed/LocalFeed";
 
-function Home() {
+function Home({ onItemSelect, wishlistIds, onToggleWishlist }) {
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,7 +28,14 @@ function Home() {
 
   if (loading) return <div className="p-10 text-center flex h-full items-center justify-center">Locating nearby items...</div>;
 
-  return <LocalFeed listings={listings} />;
+  return (
+    <LocalFeed 
+      listings={listings} 
+      onItemSelect={onItemSelect} 
+      wishlistIds={wishlistIds} 
+      onToggleWishlist={onToggleWishlist} 
+    />
+  );
 }
 
 export default Home;
