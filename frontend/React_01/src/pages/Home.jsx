@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import LocalFeed from '../components/feed/LocalFeed'
+import { supabase } from '../lib/supabaseClient'
 
 const API_BASE_URL = 'http://localhost:3000/api'
 const SMART_MATCH_REFRESH_MS = 30000
@@ -94,6 +95,34 @@ function Home({ session, onItemSelect, wishlistIds, onToggleWishlist }) {
       clearInterval(intervalId)
     }
   }, [location, userId, wishlistSignature])
+
+  useEffect(() => {
+    if (!supabase) {
+      return undefined
+    }
+
+    const channel = supabase
+      .channel('home-listing-status-updates')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'listings' }, (payload) => {
+        const nextStatus = String(payload?.new?.status || '').toLowerCase()
+        if (nextStatus !== 'sold' && nextStatus !== 'swapped') {
+          return
+        }
+
+        const listingId = payload?.new?.id
+        if (!listingId) {
+          return
+        }
+
+        setListings((current) => current.filter((item) => item.id !== listingId))
+        setNotifications((current) => current.filter((item) => item.matchedListingId !== listingId))
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   const openChatFromNotification = (notification) => {
     if (!notification) {

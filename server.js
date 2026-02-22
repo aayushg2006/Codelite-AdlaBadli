@@ -52,6 +52,29 @@ function isListingActive(row) {
   return status !== 'sold' && status !== 'swapped';
 }
 
+async function filterNearbyActiveListings(nearbyRows) {
+  const rows = nearbyRows || [];
+  const ids = [...new Set(rows.map((row) => row?.id).filter(Boolean))];
+  if (!ids.length) {
+    return [];
+  }
+
+  const { data: statusRows, error } = await supabase
+    .from('listings')
+    .select('id, status')
+    .in('id', ids);
+
+  if (error) {
+    throw error;
+  }
+
+  const statusById = new Map((statusRows || []).map((row) => [row.id, row.status]));
+  return rows.filter((row) => {
+    const status = statusById.get(row.id);
+    return isListingActive({ status });
+  });
+}
+
 // -------------------------------------------------------------------
 // 1. THE NEW AI SCANNER ROUTE
 // -------------------------------------------------------------------
@@ -140,7 +163,13 @@ app.get('/api/items/nearby', async (req, res) => {
   });
 
   if (error) return res.status(500).json({ error: error.message });
-  return res.json((data || []).filter(isListingActive));
+
+  try {
+    const activeNearby = await filterNearbyActiveListings(data || []);
+    return res.json(activeNearby);
+  } catch (statusError) {
+    return res.status(500).json({ error: statusError.message });
+  }
 });
 
 // -------------------------------------------------------------------
@@ -190,9 +219,15 @@ app.get('/api/swaps/smart-matches', async (req, res) => {
     return res.json([]);
   }
 
-  const nearbyListings = nearbyListingsRaw.filter(
-    (listing) => listing?.id && listing?.user_id && listing.user_id !== user_id && isListingActive(listing)
-  );
+  let nearbyListings = [];
+  try {
+    const onlyActive = await filterNearbyActiveListings(nearbyListingsRaw || []);
+    nearbyListings = onlyActive.filter(
+      (listing) => listing?.id && listing?.user_id && listing.user_id !== user_id
+    );
+  } catch (statusError) {
+    return res.status(500).json({ error: statusError.message });
+  }
 
   if (!nearbyListings.length) {
     return res.json([]);
