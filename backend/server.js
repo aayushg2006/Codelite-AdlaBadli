@@ -44,6 +44,7 @@ app.post('/api/scan', async (req, res) => {
       Analyze the provided image of a secondhand item. Return strictly a JSON object with no markdown formatting or backticks. 
       The JSON must include exactly these keys: 
       "itemName" (a short, catchy title), 
+      "description" (A highly detailed, engaging 2-3 sentence description of the item, noting its visual condition, utility, and appeal based on the image),
       "category" (e.g., Electronics, Furniture, Clothing, Books), 
       "suggestedPriceINR" (a realistic secondhand price in INR as an integer),
       "estimatedWeightKg" (a realistic number for carbon offset math as a float).
