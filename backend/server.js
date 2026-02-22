@@ -44,16 +44,7 @@ app.get('/api/items/nearby', async (req, res) => {
 
 app.post('/api/listings/ai-webhook', async (req, res) => {
   const body = req.body;
-  const {
-    itemName,
-    description,
-    category,
-    suggestedPriceINR,
-    estimatedWeightKg,
-    lat,
-    lon,
-    user_id
-  } = body;
+  const { itemName, description, category, suggestedPriceINR, estimatedWeightKg, lat, lon, user_id } = body;
 
   const missing = [];
   if (itemName === undefined || itemName === '') missing.push('itemName');
@@ -65,10 +56,7 @@ app.post('/api/listings/ai-webhook', async (req, res) => {
   if (user_id === undefined || user_id === '') missing.push('user_id');
 
   if (missing.length > 0) {
-    return res.status(400).json({
-      error: 'Missing required fields',
-      missing
-    });
+    return res.status(400).json({ error: 'Missing required fields', missing });
   }
 
   const p_user_lat = typeof lat === 'number' ? lat : parseFloat(lat);
@@ -77,7 +65,6 @@ app.post('/api/listings/ai-webhook', async (req, res) => {
     return res.status(400).json({ error: 'lat and lon must be valid numbers' });
   }
 
-  // Coerce estimatedWeightKg to a number to avoid Supabase strict typing errors
   const weightNum = typeof estimatedWeightKg === 'number' ? estimatedWeightKg : parseFloat(estimatedWeightKg);
 
   const authHeader = req.headers.authorization;
@@ -87,8 +74,10 @@ app.post('/api/listings/ai-webhook', async (req, res) => {
       })
     : supabase;
 
+  // FIXED: Keys now perfectly match the SQL function parameters
   const mappedData = {
     title: itemName,
+    description: description ?? null,
     category: category,
     price: suggestedPriceINR,
     ai_metadata: { estimatedWeightKg: weightNum },
@@ -110,9 +99,7 @@ app.post('/api/swaps/propose', requireAuth, async (req, res) => {
   const { desired_listing_id, offered_listing_id } = req.body;
 
   if (!desired_listing_id || !offered_listing_id) {
-    return res.status(400).json({
-      error: 'Both desired_listing_id and offered_listing_id are required'
-    });
+    return res.status(400).json({ error: 'Both desired_listing_id and offered_listing_id are required' });
   }
 
   const user_1_id = req.user.id;
@@ -124,9 +111,7 @@ app.post('/api/swaps/propose', requireAuth, async (req, res) => {
     .single();
 
   if (fetchError || !desiredListing) {
-    return res.status(500).json({
-      error: fetchError?.message || 'Desired listing not found or database error'
-    });
+    return res.status(500).json({ error: fetchError?.message || 'Desired listing not found or database error' });
   }
 
   const user_2_id = desiredListing.user_id;
@@ -152,14 +137,13 @@ app.post('/api/swaps/propose', requireAuth, async (req, res) => {
 
 app.put('/api/swaps/:id/respond', requireAuth, async (req, res) => {
   const { id } = req.params;
-  const { response } = req.body; // 'accept' or 'reject'
+  const { response } = req.body;
   const user_id = req.user.id;
 
   if (!['accept', 'reject'].includes(response)) {
     return res.status(400).json({ error: "Response must be 'accept' or 'reject'" });
   }
 
-  // Verify the match belongs to the user and is pending
   const { data: match, error: fetchError } = await supabase
     .from('matches')
     .select('*')
