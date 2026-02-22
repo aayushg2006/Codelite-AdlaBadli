@@ -1,6 +1,8 @@
 function ChatBubble({ message }) {
   const isSender = message.sender === 'me'
   const swapEvent = message.swapEvent || null
+  const rateEvent = message.rateEvent || null
+  const dealEvent = message.dealEvent || null
 
   if (swapEvent) {
     const statusTone =
@@ -20,6 +22,35 @@ function ChatBubble({ message }) {
           <p className="mt-1 text-xs leading-relaxed">
             {swapEvent.actorName || 'User'} offered <span className="font-semibold">{swapEvent.offeredItemTitle || 'an item'}</span>{' '}
             for <span className="font-semibold">{swapEvent.desiredItemTitle || 'this listing'}</span>.
+          </p>
+          <p className="mt-2 text-[10px] opacity-70">{message.time}</p>
+        </article>
+      </div>
+    )
+  }
+
+  if (rateEvent) {
+    return (
+      <div className="animate-message-in flex justify-center">
+        <article className="w-full max-w-[92%] rounded-2xl border border-[#d8e5d4] bg-[#f5faf3] px-3.5 py-3 shadow-sm text-[var(--deep-olive)]">
+          <p className="text-[10px] font-semibold uppercase tracking-wider">Final Rate Confirmed</p>
+          <p className="mt-1 text-xs leading-relaxed">
+            {rateEvent.actorName || 'User'} confirmed <span className="font-semibold">₹{Number(rateEvent.amount || 0).toLocaleString('en-IN')}</span>.
+          </p>
+          <p className="mt-2 text-[10px] opacity-70">{message.time}</p>
+        </article>
+      </div>
+    )
+  }
+
+  if (dealEvent) {
+    return (
+      <div className="animate-message-in flex justify-center">
+        <article className="w-full max-w-[92%] rounded-2xl border border-blue-200 bg-blue-50 px-3.5 py-3 shadow-sm text-blue-800">
+          <p className="text-[10px] font-semibold uppercase tracking-wider">Deal Closed</p>
+          <p className="mt-1 text-xs leading-relaxed">
+            {dealEvent.actorName || 'User'} marked <span className="font-semibold">{dealEvent.listingTitle || 'item'}</span> as sold for{' '}
+            <span className="font-semibold">₹{Number(dealEvent.amount || 0).toLocaleString('en-IN')}</span>.
           </p>
           <p className="mt-2 text-[10px] opacity-70">{message.time}</p>
         </article>

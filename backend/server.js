@@ -25,6 +25,11 @@ function normalizeDistanceKm(row) {
   return Math.max(parsed, 0);
 }
 
+function isListingActive(row) {
+  const status = typeof row?.status === 'string' ? row.status.toLowerCase() : 'active';
+  return status !== 'sold' && status !== 'swapped';
+}
+
 // -------------------------------------------------------------------
 // 1. THE AI SCANNER ROUTE
 // -------------------------------------------------------------------
@@ -108,7 +113,7 @@ app.get('/api/items/nearby', async (req, res) => {
   });
 
   if (error) return res.status(500).json({ error: error.message });
-  return res.json(data);
+  return res.json((data || []).filter(isListingActive));
 });
 
 // -------------------------------------------------------------------
@@ -159,7 +164,7 @@ app.get('/api/swaps/smart-matches', async (req, res) => {
   }
 
   const nearbyListings = nearbyListingsRaw.filter(
-    (listing) => listing?.id && listing?.user_id && listing.user_id !== user_id
+    (listing) => listing?.id && listing?.user_id && listing.user_id !== user_id && isListingActive(listing)
   );
 
   if (!nearbyListings.length) {
@@ -313,10 +318,17 @@ app.post('/api/swaps/propose', requireAuth, async (req, res) => {
 
   const user_1_id = req.user.id;
 
-  const { data: desiredListing, error: fetchError } = await supabase
-    .from('listings').select('user_id').eq('id', desired_listing_id).single();
+  const [{ data: desiredListing, error: desiredError }, { data: offeredListing, error: offeredError }] = await Promise.all([
+    supabase.from('listings').select('id, user_id, status').eq('id', desired_listing_id).single(),
+    supabase.from('listings').select('id, user_id, status').eq('id', offered_listing_id).single(),
+  ]);
 
-  if (fetchError || !desiredListing) return res.status(500).json({ error: 'Desired listing not found' });
+  if (desiredError || !desiredListing) return res.status(500).json({ error: 'Desired listing not found' });
+  if (offeredError || !offeredListing) return res.status(500).json({ error: 'Offered listing not found' });
+  if (offeredListing.user_id !== user_1_id) return res.status(403).json({ error: 'Offered listing does not belong to current user' });
+  if (!isListingActive(desiredListing) || !isListingActive(offeredListing)) {
+    return res.status(400).json({ error: 'Cannot propose swap for sold/swapped listings' });
+  }
 
   const user_2_id = desiredListing.user_id;
 
@@ -348,7 +360,52 @@ app.put('/api/swaps/:id/respond', requireAuth, async (req, res) => {
     .from('matches').update({ status: newStatus }).eq('id', id).select().single();
 
   if (updateError) return res.status(500).json({ error: updateError.message });
+
+  if (newStatus === 'accepted') {
+    const { error: listingUpdateError } = await supabase
+      .from('listings')
+      .update({ status: 'swapped' })
+      .in('id', [match.listing_1_id, match.listing_2_id].filter(Boolean));
+
+    if (listingUpdateError) {
+      return res.status(500).json({ error: listingUpdateError.message });
+    }
+  }
+
   return res.json(updatedMatch);
+});
+
+app.put('/api/listings/:id/mark-sold', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { final_rate } = req.body || {};
+  const user_id = req.user.id;
+
+  const { data: listing, error: fetchError } = await supabase
+    .from('listings')
+    .select('id, user_id, ai_metadata')
+    .eq('id', id)
+    .eq('user_id', user_id)
+    .single();
+
+  if (fetchError || !listing) {
+    return res.status(404).json({ error: 'Listing not found or unauthorized' });
+  }
+
+  const nextMetadata = {
+    ...(listing.ai_metadata || {}),
+    finalRate: final_rate ?? listing.ai_metadata?.finalRate ?? null,
+  };
+
+  const { data: updatedListing, error: updateError } = await supabase
+    .from('listings')
+    .update({ status: 'sold', ai_metadata: nextMetadata })
+    .eq('id', id)
+    .eq('user_id', user_id)
+    .select()
+    .single();
+
+  if (updateError) return res.status(500).json({ error: updateError.message });
+  return res.json(updatedListing);
 });
 
 const PORT = process.env.PORT || 3000;

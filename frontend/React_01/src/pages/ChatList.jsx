@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 const SWAP_EVENT_PREFIX = '__SWAP_EVENT__'
+const RATE_EVENT_PREFIX = '__RATE_EVENT__'
+const DEAL_EVENT_PREFIX = '__DEAL_EVENT__'
 
 const formatTime = (timestamp) => {
   if (!timestamp) {
@@ -30,6 +32,12 @@ const formatPreviewMessage = (content) => {
   }
 
   if (!content.startsWith(SWAP_EVENT_PREFIX)) {
+    if (content.startsWith(RATE_EVENT_PREFIX)) {
+      return 'Final rate confirmed'
+    }
+    if (content.startsWith(DEAL_EVENT_PREFIX)) {
+      return 'Deal closed'
+    }
     return content
   }
 

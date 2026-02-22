@@ -58,7 +58,14 @@ function Home({ session, onItemSelect, wishlistIds, onToggleWishlist }) {
         if (feedRes.ok) {
           const nearbyListings = await feedRes.json()
           if (isMounted) {
-            setListings(Array.isArray(nearbyListings) ? nearbyListings : [])
+            setListings(
+              Array.isArray(nearbyListings)
+                ? nearbyListings.filter((item) => {
+                    const status = typeof item?.status === 'string' ? item.status.toLowerCase() : 'active'
+                    return status !== 'sold' && status !== 'swapped'
+                  })
+                : []
+            )
           }
         }
 

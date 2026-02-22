@@ -11,6 +11,28 @@ import { supabase } from './lib/supabaseClient'
 
 const CHAT_LAST_READ_PREFIX = 'geoswap_chat_last_read_'
 
+const getChatReadStoreKey = (userId) => `${CHAT_LAST_READ_PREFIX}${userId}`
+
+const readLastReadMap = (userId) => {
+  if (typeof window === 'undefined' || !userId) {
+    return {}
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getChatReadStoreKey(userId))
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+const writeLastReadMap = (userId, map) => {
+  if (typeof window === 'undefined' || !userId) {
+    return
+  }
+  window.localStorage.setItem(getChatReadStoreKey(userId), JSON.stringify(map))
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('home')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -19,28 +41,6 @@ function App() {
   const [selectedChatSelection, setSelectedChatSelection] = useState(null)
   const [wishlistIds, setWishlistIds] = useState([])
   const [chatUnreadCount, setChatUnreadCount] = useState(0)
-
-  const getChatReadStoreKey = (userId) => `${CHAT_LAST_READ_PREFIX}${userId}`
-
-  const readLastReadMap = (userId) => {
-    if (typeof window === 'undefined' || !userId) {
-      return {}
-    }
-
-    try {
-      const raw = window.localStorage.getItem(getChatReadStoreKey(userId))
-      return raw ? JSON.parse(raw) : {}
-    } catch {
-      return {}
-    }
-  }
-
-  const writeLastReadMap = (userId, map) => {
-    if (typeof window === 'undefined' || !userId) {
-      return
-    }
-    window.localStorage.setItem(getChatReadStoreKey(userId), JSON.stringify(map))
-  }
 
   // Ensure the user exists in public.users to prevent database foreign-key crashes!
   const syncUserToDatabase = async (user) => {
@@ -79,6 +79,7 @@ function App() {
         setIsAuthenticated(false)
         setAuthStage('entry')
         setWishlistIds([])
+        setChatUnreadCount(0)
       }
     })
 
@@ -88,7 +89,6 @@ function App() {
   useEffect(() => {
     const userId = session?.user?.id
     if (!userId || !supabase) {
-      setChatUnreadCount(0)
       return undefined
     }
 

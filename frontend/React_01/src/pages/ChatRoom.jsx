@@ -6,6 +6,8 @@ import { formatPriceINR } from '../lib/helpers'
 import { supabase } from '../lib/supabaseClient'
 
 const SWAP_EVENT_PREFIX = '__SWAP_EVENT__'
+const RATE_EVENT_PREFIX = '__RATE_EVENT__'
+const DEAL_EVENT_PREFIX = '__DEAL_EVENT__'
 
 const formatMessageTime = (timestamp) =>
   new Intl.DateTimeFormat('en-US', {
@@ -23,6 +25,8 @@ const getInitials = (name = 'U') =>
     .toUpperCase()
 
 const createSwapEventContent = (payload) => `${SWAP_EVENT_PREFIX}${JSON.stringify(payload)}`
+const createRateEventContent = (payload) => `${RATE_EVENT_PREFIX}${JSON.stringify(payload)}`
+const createDealEventContent = (payload) => `${DEAL_EVENT_PREFIX}${JSON.stringify(payload)}`
 
 const parseSwapEventContent = (content) => {
   if (typeof content !== 'string' || !content.startsWith(SWAP_EVENT_PREFIX)) {
@@ -31,6 +35,30 @@ const parseSwapEventContent = (content) => {
 
   try {
     return JSON.parse(content.slice(SWAP_EVENT_PREFIX.length))
+  } catch {
+    return null
+  }
+}
+
+const parseRateEventContent = (content) => {
+  if (typeof content !== 'string' || !content.startsWith(RATE_EVENT_PREFIX)) {
+    return null
+  }
+
+  try {
+    return JSON.parse(content.slice(RATE_EVENT_PREFIX.length))
+  } catch {
+    return null
+  }
+}
+
+const parseDealEventContent = (content) => {
+  if (typeof content !== 'string' || !content.startsWith(DEAL_EVENT_PREFIX)) {
+    return null
+  }
+
+  try {
+    return JSON.parse(content.slice(DEAL_EVENT_PREFIX.length))
   } catch {
     return null
   }
@@ -54,12 +82,60 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
   const [selectedOfferId, setSelectedOfferId] = useState('')
   const [incomingSwapRequests, setIncomingSwapRequests] = useState([])
   const [respondingRequestId, setRespondingRequestId] = useState(null)
+  const [rateInput, setRateInput] = useState('')
+  const [isSubmittingRate, setIsSubmittingRate] = useState(false)
+  const [isMarkingSold, setIsMarkingSold] = useState(false)
 
   const scrollRef = useRef(null)
   const contactMenuRef = useRef(null)
 
   const userId = session?.user?.id
   const isSeller = useMemo(() => chatRecord?.seller_id === userId, [chatRecord, userId])
+  const counterpartId = useMemo(() => {
+    if (!chatRecord || !userId) {
+      return null
+    }
+    return chatRecord.seller_id === userId ? chatRecord.buyer_id : chatRecord.seller_id
+  }, [chatRecord, userId])
+
+  const finalRateAgreement = useMemo(() => {
+    if (!userId || !counterpartId) {
+      return null
+    }
+
+    const confirmationsByAmount = new Map()
+    const orderedMessages = [...messages].sort(
+      (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+    )
+
+    for (const message of orderedMessages) {
+      const event = message.rateEvent
+      const amount = Number(event?.amount)
+      if (!event || !Number.isFinite(amount) || amount <= 0 || !event.actorId) {
+        continue
+      }
+
+      const key = String(Math.round(amount))
+      if (!confirmationsByAmount.has(key)) {
+        confirmationsByAmount.set(key, { amount: Math.round(amount), actors: new Set(), lastAt: message.createdAt || null })
+      }
+
+      const entry = confirmationsByAmount.get(key)
+      entry.actors.add(event.actorId)
+      entry.lastAt = message.createdAt || entry.lastAt
+    }
+
+    const candidates = [...confirmationsByAmount.values()].filter(
+      (entry) => entry.actors.has(userId) && entry.actors.has(counterpartId)
+    )
+
+    if (!candidates.length) {
+      return null
+    }
+
+    candidates.sort((a, b) => new Date(b.lastAt || 0).getTime() - new Date(a.lastAt || 0).getTime())
+    return candidates[0]
+  }, [messages, userId, counterpartId])
 
   useEffect(() => {
     if (!isContactMenuOpen) {
@@ -105,6 +181,9 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
                 sender: row.sender_id === userId ? 'me' : 'other',
                 text: row.content,
                 swapEvent: parseSwapEventContent(row.content),
+                rateEvent: parseRateEventContent(row.content),
+                dealEvent: parseDealEventContent(row.content),
+                createdAt: row.created_at,
                 time: formatMessageTime(row.created_at),
               },
             ]
@@ -254,6 +333,9 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
           sender: row.sender_id === userId ? 'me' : 'other',
           text: row.content,
           swapEvent: parseSwapEventContent(row.content),
+          rateEvent: parseRateEventContent(row.content),
+          dealEvent: parseDealEventContent(row.content),
+          createdAt: row.created_at,
           time: formatMessageTime(row.created_at),
         }))
       )
@@ -418,6 +500,86 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
     }
   }
 
+  const handleConfirmFinalRate = async () => {
+    const parsedRate = Number(rateInput)
+    if (!chatRecord?.id || !userId || !Number.isFinite(parsedRate) || parsedRate <= 0) {
+      return
+    }
+
+    setIsSubmittingRate(true)
+
+    try {
+      const payload = {
+        kind: 'rate_confirmed',
+        actorId: userId,
+        actorName: session?.user?.user_metadata?.username || session?.user?.email || 'User',
+        amount: Math.round(parsedRate),
+      }
+
+      const { error } = await supabase.from('messages').insert({
+        chat_id: chatRecord.id,
+        sender_id: userId,
+        content: createRateEventContent(payload),
+      })
+
+      if (error) {
+        alert(`Failed to confirm final rate: ${error.message}`)
+        return
+      }
+
+      setRateInput('')
+    } finally {
+      setIsSubmittingRate(false)
+    }
+  }
+
+  const handleMarkSold = async () => {
+    if (!contextItem?.id || !session?.access_token || !finalRateAgreement?.amount || !chatRecord?.id || !userId) {
+      return
+    }
+
+    setIsMarkingSold(true)
+
+    try {
+      const res = await fetch(`http://localhost:3000/api/listings/${contextItem.id}/mark-sold`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          final_rate: finalRateAgreement.amount,
+        }),
+      })
+
+      const result = await res.json()
+
+      if (!res.ok) {
+        alert(result?.error || 'Failed to mark listing as sold.')
+        return
+      }
+
+      const dealPayload = {
+        kind: 'sold',
+        actorId: userId,
+        actorName: session?.user?.user_metadata?.username || session?.user?.email || 'Seller',
+        amount: finalRateAgreement.amount,
+        listingTitle: contextItem?.title || 'Item',
+      }
+
+      await supabase.from('messages').insert({
+        chat_id: chatRecord.id,
+        sender_id: userId,
+        content: createDealEventContent(dealPayload),
+      })
+
+      setContextItem((current) => (current ? { ...current, status: 'sold', ai_metadata: result.ai_metadata || current.ai_metadata } : current))
+      alert('Listing marked as sold.')
+    } finally {
+      setIsMarkingSold(false)
+    }
+  }
+
   const handleRespondToSwapRequest = async (requestId, response) => {
     if (!requestId || !session?.access_token) {
       return
@@ -528,11 +690,42 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
           </div>
         </div>
 
+        <div className="mt-3 rounded-xl border border-[#dce7d8] bg-[#f8fbf7] p-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500">Final Rate (Both Users Confirm)</p>
+          {finalRateAgreement ? (
+            <p className="mt-1 text-sm font-semibold text-[var(--deep-olive)]">
+              Locked at {formatPriceINR(finalRateAgreement.amount)}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-gray-600">Enter a final rate and confirm. Deal locks after both sides confirm the same amount.</p>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="number"
+              min="1"
+              inputMode="numeric"
+              value={rateInput}
+              onChange={(event) => setRateInput(event.target.value)}
+              className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-[var(--earth-olive)]"
+              placeholder="Enter final rate"
+            />
+            <button
+              type="button"
+              onClick={handleConfirmFinalRate}
+              disabled={isSubmittingRate || !rateInput}
+              className="rounded-lg bg-[var(--earth-olive)] px-3 py-2 text-xs font-semibold text-white transition duration-150 hover:bg-[var(--deep-olive)] disabled:opacity-60"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+
         {!isSeller ? (
           <button
             type="button"
             onClick={() => setIsSwapModalOpen(true)}
-            className="mt-3 w-full rounded-xl bg-[var(--earth-olive)] py-2.5 text-xs font-semibold uppercase tracking-wider text-white transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95"
+            disabled={contextItem?.status === 'sold' || contextItem?.status === 'swapped'}
+            className="mt-3 w-full rounded-xl bg-[var(--earth-olive)] py-2.5 text-xs font-semibold uppercase tracking-wider text-white transition duration-150 hover:bg-[var(--deep-olive)] active:scale-95 disabled:opacity-60"
           >
             Propose
           </button>
@@ -587,6 +780,21 @@ function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
             No pending swap requests for this item yet.
           </p>
         )}
+
+        {isSeller && finalRateAgreement ? (
+          <button
+            type="button"
+            onClick={handleMarkSold}
+            disabled={isMarkingSold || contextItem?.status === 'sold' || contextItem?.status === 'swapped'}
+            className="mt-3 w-full rounded-xl border border-[#d7e4d3] bg-white py-2.5 text-xs font-semibold uppercase tracking-wider text-[var(--deep-olive)] shadow-sm transition duration-150 hover:bg-[#eef4eb] disabled:opacity-60"
+          >
+            {contextItem?.status === 'sold' || contextItem?.status === 'swapped'
+              ? `Item ${contextItem?.status}`
+              : isMarkingSold
+              ? 'Marking Sold...'
+              : 'Mark as Sold'}
+          </button>
+        ) : null}
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-2 overflow-y-auto px-4 pb-3 pt-3">
