@@ -2,6 +2,8 @@ import { MessageCircleMore } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
+const SWAP_EVENT_PREFIX = '__SWAP_EVENT__'
+
 const formatTime = (timestamp) => {
   if (!timestamp) {
     return ''
@@ -21,6 +23,25 @@ const getInitials = (name = 'U') =>
     .join('')
     .slice(0, 2)
     .toUpperCase()
+
+const formatPreviewMessage = (content) => {
+  if (typeof content !== 'string') {
+    return 'Start the conversation'
+  }
+
+  if (!content.startsWith(SWAP_EVENT_PREFIX)) {
+    return content
+  }
+
+  try {
+    const payload = JSON.parse(content.slice(SWAP_EVENT_PREFIX.length))
+    if (payload?.kind === 'accepted') return 'Swap accepted'
+    if (payload?.kind === 'rejected') return 'Swap rejected'
+    return 'Swap proposed'
+  } catch {
+    return 'Swap update'
+  }
+}
 
 function ChatList({ session, onOpenChat }) {
   const [threads, setThreads] = useState([])
@@ -108,7 +129,7 @@ function ChatList({ session, onOpenChat }) {
           counterpartName: counterpart?.username || 'Local User',
           counterpartInitials: getInitials(counterpart?.username || 'Local User'),
           listing,
-          lastMessage: latestMessage?.content || 'Start the conversation',
+          lastMessage: formatPreviewMessage(latestMessage?.content),
           lastMessageAt: latestMessage?.created_at || fallbackTime,
         }
       })

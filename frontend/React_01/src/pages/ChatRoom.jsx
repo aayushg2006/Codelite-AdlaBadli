@@ -5,6 +5,8 @@ import ChatBubble from '../components/ui/ChatBubble'
 import { formatPriceINR } from '../lib/helpers'
 import { supabase } from '../lib/supabaseClient'
 
+const SWAP_EVENT_PREFIX = '__SWAP_EVENT__'
+
 const formatMessageTime = (timestamp) =>
   new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
@@ -20,7 +22,21 @@ const getInitials = (name = 'U') =>
     .slice(0, 2)
     .toUpperCase()
 
-function ChatRoom({ session, chatSelection, onBack }) {
+const createSwapEventContent = (payload) => `${SWAP_EVENT_PREFIX}${JSON.stringify(payload)}`
+
+const parseSwapEventContent = (content) => {
+  if (typeof content !== 'string' || !content.startsWith(SWAP_EVENT_PREFIX)) {
+    return null
+  }
+
+  try {
+    return JSON.parse(content.slice(SWAP_EVENT_PREFIX.length))
+  } catch {
+    return null
+  }
+}
+
+function ChatRoom({ session, chatSelection, onBack, onMarkChatRead }) {
   const [chatRecord, setChatRecord] = useState(null)
   const [contextItem, setContextItem] = useState(chatSelection?.listing || null)
   const [messages, setMessages] = useState([])
@@ -88,6 +104,7 @@ function ChatRoom({ session, chatSelection, onBack }) {
                 id: row.id,
                 sender: row.sender_id === userId ? 'me' : 'other',
                 text: row.content,
+                swapEvent: parseSwapEventContent(row.content),
                 time: formatMessageTime(row.created_at),
               },
             ]
@@ -109,6 +126,12 @@ function ChatRoom({ session, chatSelection, onBack }) {
       })
     }
   }, [messages])
+
+  useEffect(() => {
+    if (chatRecord?.id) {
+      onMarkChatRead?.(chatRecord.id)
+    }
+  }, [messages, chatRecord?.id, onMarkChatRead])
 
   useEffect(() => {
     if (!userId || !chatSelection || !supabase) {
@@ -224,11 +247,13 @@ function ChatRoom({ session, chatSelection, onBack }) {
         initials: getInitials(otherUserName),
         status: 'Online',
       })
+      onMarkChatRead?.(resolvedChat.id)
       setMessages(
         (historyRows || []).map((row) => ({
           id: row.id,
           sender: row.sender_id === userId ? 'me' : 'other',
           text: row.content,
+          swapEvent: parseSwapEventContent(row.content),
           time: formatMessageTime(row.created_at),
         }))
       )
@@ -240,7 +265,7 @@ function ChatRoom({ session, chatSelection, onBack }) {
     return () => {
       isMounted = false
     }
-  }, [chatSelection, userId])
+  }, [chatSelection, userId, onMarkChatRead])
 
   useEffect(() => {
     if (!isSwapModalOpen || !userId || !supabase) {
@@ -370,6 +395,21 @@ function ChatRoom({ session, chatSelection, onBack }) {
       if (res.ok) {
         alert('Swap request sent successfully.')
         setIsSwapModalOpen(false)
+        const offeredTitle = myAvailableListings.find((item) => item.id === selectedOfferId)?.title || 'your item'
+        const swapEventPayload = {
+          kind: 'proposed',
+          actorId: userId,
+          actorName: session?.user?.user_metadata?.username || session?.user?.email || 'Buyer',
+          offeredItemTitle: offeredTitle,
+          desiredItemTitle: contextItem?.title || 'item',
+          matchId: result?.id || null,
+        }
+
+        await supabase.from('messages').insert({
+          chat_id: chatRecord.id,
+          sender_id: userId,
+          content: createSwapEventContent(swapEventPayload),
+        })
       } else {
         alert(result?.error || 'Failed to propose swap.')
       }
@@ -403,6 +443,21 @@ function ChatRoom({ session, chatSelection, onBack }) {
       }
 
       setIncomingSwapRequests((current) => current.filter((item) => item.id !== requestId))
+      const request = incomingSwapRequests.find((item) => item.id === requestId)
+      const swapEventPayload = {
+        kind: response === 'accept' ? 'accepted' : 'rejected',
+        actorId: userId,
+        actorName: session?.user?.user_metadata?.username || session?.user?.email || 'Seller',
+        offeredItemTitle: request?.offeredItem?.title || 'buyer item',
+        desiredItemTitle: contextItem?.title || 'item',
+        matchId: requestId,
+      }
+
+      await supabase.from('messages').insert({
+        chat_id: chatRecord.id,
+        sender_id: userId,
+        content: createSwapEventContent(swapEventPayload),
+      })
       alert(response === 'accept' ? 'Swap request accepted.' : 'Swap request rejected.')
     } catch {
       alert('Network error occurred while responding to swap request.')

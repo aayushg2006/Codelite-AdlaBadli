@@ -9,6 +9,8 @@ import Home from './pages/Home'
 import Profile from './pages/Profile'
 import { supabase } from './lib/supabaseClient'
 
+const CHAT_LAST_READ_PREFIX = 'geoswap_chat_last_read_'
+
 function App() {
   const [activeTab, setActiveTab] = useState('home')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -16,6 +18,29 @@ function App() {
   const [authStage, setAuthStage] = useState('entry')
   const [selectedChatSelection, setSelectedChatSelection] = useState(null)
   const [wishlistIds, setWishlistIds] = useState([])
+  const [chatUnreadCount, setChatUnreadCount] = useState(0)
+
+  const getChatReadStoreKey = (userId) => `${CHAT_LAST_READ_PREFIX}${userId}`
+
+  const readLastReadMap = (userId) => {
+    if (typeof window === 'undefined' || !userId) {
+      return {}
+    }
+
+    try {
+      const raw = window.localStorage.getItem(getChatReadStoreKey(userId))
+      return raw ? JSON.parse(raw) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  const writeLastReadMap = (userId, map) => {
+    if (typeof window === 'undefined' || !userId) {
+      return
+    }
+    window.localStorage.setItem(getChatReadStoreKey(userId), JSON.stringify(map))
+  }
 
   // Ensure the user exists in public.users to prevent database foreign-key crashes!
   const syncUserToDatabase = async (user) => {
@@ -60,6 +85,82 @@ function App() {
     return () => subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    const userId = session?.user?.id
+    if (!userId || !supabase) {
+      setChatUnreadCount(0)
+      return undefined
+    }
+
+    const recomputeUnreadCount = async () => {
+      const { data: chats, error: chatsError } = await supabase
+        .from('chats')
+        .select('id, buyer_id, seller_id')
+        .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+
+      if (chatsError || !chats?.length) {
+        setChatUnreadCount(0)
+        return
+      }
+
+      const chatIds = chats.map((chat) => chat.id).filter(Boolean)
+      if (!chatIds.length) {
+        setChatUnreadCount(0)
+        return
+      }
+
+      const { data: messages, error: messagesError } = await supabase
+        .from('messages')
+        .select('id, chat_id, sender_id, created_at')
+        .in('chat_id', chatIds)
+
+      if (messagesError) {
+        setChatUnreadCount(0)
+        return
+      }
+
+      const lastReadMap = readLastReadMap(userId)
+      const unread = (messages || []).filter((message) => {
+        if (!message?.chat_id || message?.sender_id === userId) {
+          return false
+        }
+
+        const lastReadAt = lastReadMap[message.chat_id]
+        if (!lastReadAt) {
+          return true
+        }
+
+        return new Date(message.created_at).getTime() > new Date(lastReadAt).getTime()
+      }).length
+
+      setChatUnreadCount(unread)
+    }
+
+    recomputeUnreadCount()
+
+    const chatsChannel = supabase
+      .channel(`app-chats-${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats' }, (payload) => {
+        const row = payload.new
+        if (row?.buyer_id === userId || row?.seller_id === userId) {
+          recomputeUnreadCount()
+        }
+      })
+      .subscribe()
+
+    const messagesChannel = supabase
+      .channel(`app-messages-${userId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+        recomputeUnreadCount()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(chatsChannel)
+      supabase.removeChannel(messagesChannel)
+    }
+  }, [session])
+
   const handleTabChange = (tab) => setActiveTab(tab)
   const openLogin = () => setAuthStage('login')
 
@@ -71,6 +172,48 @@ function App() {
       listing: item,
     })
     setActiveTab('chat')
+  }
+
+  const markChatRead = async (chatId) => {
+    const userId = session?.user?.id
+    if (!userId || !chatId || !supabase) {
+      return
+    }
+
+    const nextMap = readLastReadMap(userId)
+    nextMap[chatId] = new Date().toISOString()
+    writeLastReadMap(userId, nextMap)
+
+    const { data: chats } = await supabase
+      .from('chats')
+      .select('id')
+      .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+
+    const chatIds = (chats || []).map((chat) => chat.id).filter(Boolean)
+    if (!chatIds.length) {
+      setChatUnreadCount(0)
+      return
+    }
+
+    const { data: messages } = await supabase
+      .from('messages')
+      .select('id, chat_id, sender_id, created_at')
+      .in('chat_id', chatIds)
+
+    const unread = (messages || []).filter((message) => {
+      if (!message?.chat_id || message?.sender_id === userId) {
+        return false
+      }
+
+      const lastReadAt = nextMap[message.chat_id]
+      if (!lastReadAt) {
+        return true
+      }
+
+      return new Date(message.created_at).getTime() > new Date(lastReadAt).getTime()
+    }).length
+
+    setChatUnreadCount(unread)
   }
 
   // SAVE HEART CLICKS TO SUPABASE
@@ -126,6 +269,7 @@ function App() {
             }
           }}
           session={session}
+          onMarkChatRead={markChatRead}
         />
       )
     } else {
@@ -153,7 +297,7 @@ function App() {
             {tabContent}
           </div>
         </main>
-        {isAuthenticated && <BottomNav activeTab={activeTab} onTabChange={handleTabChange} />}
+        {isAuthenticated && <BottomNav activeTab={activeTab} onTabChange={handleTabChange} chatBadgeCount={chatUnreadCount} />}
       </div>
     </div>
   )
